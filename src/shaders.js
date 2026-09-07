@@ -35,14 +35,21 @@ fn spawn(i: u32, epoch: u32) -> Particle {
     let rad = pow(random(seed + 4u), .3333)*5.2;
     pos = vec3f(sqrt(1.-z*z)*cos(a), z*.72, sqrt(1.-z*z)*sin(a))*rad;
   }
-  if (u.flow.w > 1.5) {
+  if (u.flow.w > 1.5 && u.flow.w < 2.5) {
     let x = (random(seed + 5u)*2.-1.)*7.;
     let strand = f32(i % 5u)*TAU/5.;
     pos = vec3f(x, sin(x*.65 + strand)*1.5 + cos(b)*r*.3, cos(x*.65 + strand)*1.5 + sin(b)*r*.3);
   }
+  if (u.flow.w > 2.5) {
+    let diskRadius = 3.05 + pow(random(seed + 5u), 1.6)*5.15;
+    pos = vec3f(cos(a)*diskRadius, (random(seed + 8u)-.5)*.04, sin(a)*diskRadius);
+  }
   var p: Particle;
   p.position = vec4f(pos, random(seed + 6u));
   p.velocity = vec4f(0.,0.,0.,random(seed + 7u)*22. + 8.);
+  if (u.flow.w > 2.5) {
+    p.velocity = vec4f(normalize(vec3f(-pos.z,0.,pos.x))*sqrt(42./length(pos.xz)), 35.+random(seed+7u)*35.);
+  }
   return p;
 }
 @compute @workgroup_size(256) fn init(@builtin(global_invocation_id) id: vec3u) {
@@ -78,12 +85,20 @@ fn curl(p: vec3f, t: f32) -> vec3f {
     flowVelocity = vec3f(-pos.z*.32, sin(pos.x*.6+t*.2)*.5, pos.x*.32) - pos*.1;
     flowVelocity -= normalize(pos + vec3f(.0001))*max(length(pos)-5.,0.)*.9;
   }
-  if (u.flow.w > 1.5) {
+  if (u.flow.w > 1.5 && u.flow.w < 2.5) {
     let phase = pos.x*.65 + f32(i % 5u)*TAU/5.;
     let center = vec3f(pos.x, sin(phase)*1.5, cos(phase)*1.5);
     flowVelocity = vec3f(2.5, cos(phase)*2.44, -sin(phase)*2.44) - (pos-center)*1.25;
   }
-  flowVelocity += curl(pos,t)*u.flow.x*1.15;
+  if (u.flow.w > 2.5) {
+    // Kepler-like differential rotation, slow accretion and weak planar turbulence.
+    flowVelocity = tangent*sqrt(42./max(radius,1.)) - radial*.045 - vec3f(0.,pos.y*5.,0.);
+    let eddies = curl(pos,t)*u.flow.x*.16;
+    flowVelocity += vec3f(eddies.x,0.,eddies.z);
+    flowVelocity -= radial*max(radius-8.2,0.)*.8;
+  } else {
+    flowVelocity += curl(pos,t)*u.flow.x*1.15;
+  }
   var vel = mix(p.velocity.xyz, flowVelocity, 1.-exp(-dt*2.4));
   let delta = u.pointer.xyz - pos;
   let d2 = dot(delta, delta);
@@ -93,8 +108,9 @@ fn curl(p: vec3f, t: f32) -> vec3f {
   vel *= min(1., 16./max(length(vel),.001));
   p.position = vec4f(pos+vel*dt, p.position.w);
   p.velocity = vec4f(vel,p.velocity.w-dt);
-  if (u.flow.w > 1.5 && p.position.x > 7.5) { p.position.x -= 15.; }
-  if (p.velocity.w <= 0. || length(p.position.xyz) > 24.) {
+  if (u.flow.w > 2.5) { p.position.y = 0.; p.velocity.y = 0.; }
+  if (u.flow.w > 1.5 && u.flow.w < 2.5 && p.position.x > 7.5) { p.position.x -= 15.; }
+  if (p.velocity.w <= 0. || length(p.position.xyz) > 24. || (u.flow.w > 2.5 && length(p.position.xyz) < 2.5)) {
     p = spawn(i, u32(t*7.)+1u);
     p.velocity.w = 22. + p.position.w*20.;
   }
@@ -109,6 +125,32 @@ struct Out {
   @location(0) local: vec2f,
   @location(1) color: vec3f,
 };
+fn thermalColor(radius: f32) -> vec3f {
+  let heat = 1.-smoothstep(2.8,8.4,radius);
+  return mix(vec3f(.65,.16,.025),vec3f(1.,.79,.42),heat)*(.35+heat*.65)
+    + vec3f(.55,.52,.43)*pow(heat,5.);
+}
+// A top-down emission atlas of the actual particles, consumed by curved camera rays.
+@vertex fn vsDisk(@builtin(vertex_index) v: u32, @builtin(instance_index) i: u32) -> Out {
+  let p = particles[i];
+  let corners = array<vec2f,6>(vec2f(-1.,-1.),vec2f(1.,-1.),vec2f(-1.,1.),vec2f(-1.,1.),vec2f(1.,-1.),vec2f(1.,1.));
+  let corner = corners[v];
+  let radius = length(p.position.xz);
+  let fade = smoothstep(2.5,3.1,radius)*(1.-smoothstep(7.6,8.8,radius))*smoothstep(0.,1.5,p.velocity.w);
+  let theta = atan2(p.position.z,p.position.x);
+  let filaments = .65+.35*sin(radius*34.+theta*3.-u.timing.y*.8);
+  var color = thermalColor(radius);
+  if (u.render.w < 2.5) {
+    color = mix(vec3f(.055,.69,.66),vec3f(1.,.27,.065),.5+.5*sin(radius));
+    if (u.render.w > .5 && u.render.w < 1.5) { color=mix(vec3f(.35,.12,.95),vec3f(.15,1.,.64),.5+.5*sin(radius)); }
+    if (u.render.w > 1.5) { color=mix(vec3f(.9,.025,.1),vec3f(1.,.65,.15),.5+.5*sin(radius)); }
+  }
+  var o: Out;
+  o.position=vec4f(p.position.x/10.+corner.x*u.render.x*3./1024.,-p.position.z/10.+corner.y*u.render.x*3./1024.,0.,1.);
+  o.local=corner;
+  o.color=color*(524288./u.timing.z)*(.7+p.position.w*.6)*filaments*fade*.7;
+  return o;
+}
 @vertex fn vs(@builtin(vertex_index) v: u32, @builtin(instance_index) i: u32) -> Out {
   let p = particles[i];
   let corners = array<vec2f, 6>(vec2f(-1.,-1.),vec2f(1.,-1.),vec2f(-1.,1.),vec2f(-1.,1.),vec2f(1.,-1.),vec2f(1.,1.));
@@ -131,7 +173,8 @@ struct Out {
   var coldColor = vec3f(.055,.69,.66);
   var warmColor = vec3f(1.,.27,.065);
   if (u.render.w > .5 && u.render.w < 1.5) { coldColor=vec3f(.35,.12,.95); warmColor=vec3f(.15,1.,.64); }
-  if (u.render.w > 1.5) { coldColor=vec3f(.9,.025,.1); warmColor=vec3f(1.,.65,.15); }
+  if (u.render.w > 1.5 && u.render.w < 2.5) { coldColor=vec3f(.9,.025,.1); warmColor=vec3f(1.,.65,.15); }
+  if (u.render.w > 2.5) { coldColor=vec3f(.65,.16,.025); warmColor=vec3f(1.,.86,.6); }
   let brightness = (.65+p.position.w*.7)*(.7+min(length(p.velocity.xyz)*.12,.7));
   // Compensate density so four million particles retain color instead of clipping white.
   let density = pow(524288./u.timing.z,.68);
@@ -152,6 +195,48 @@ struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f };
 @vertex fn vs(@builtin(vertex_index) i: u32) -> Out {
   let p = array<vec2f,3>(vec2f(-1.,-1.),vec2f(3.,-1.),vec2f(-1.,3.));
   var o: Out; o.position=vec4f(p[i],0.,1.); o.uv=p[i]*vec2f(.5,-.5)+.5; return o;
+}
+`;
+export const blackHoleShader = common + fullscreen + /* wgsl */`
+@group(0) @binding(1) var disk: texture_2d<f32>;
+@group(0) @binding(2) var linearSampler: sampler;
+@fragment fn fs(o: Out) -> @location(0) vec4f {
+  let screen = (o.uv*2.-1.)*vec2f(u.misc.x/u.misc.y,-1.);
+  let focal = length(vec3f(u.vp[0].y,u.vp[1].y,u.vp[2].y));
+  let forward = -normalize(cross(u.right.xyz,u.up.xyz));
+  var ray = normalize(forward+(u.right.xyz*screen.x+u.up.xyz*screen.y)/focal);
+  var pos = u.eye.xyz;
+  let angular = cross(pos,ray);
+  let h2 = dot(angular,angular);
+  var light = vec3f(0.);
+  var transmission = 1.;
+  // Schwarzschild-inspired ray equation, rs=1. Fixed work bound, adaptive spatial steps.
+  // This thin-disk approximation omits Kerr spin, frequency transport and full GR radiometry.
+  for (var step=0; step<180; step++) {
+    let radius = length(pos);
+    if (radius < 1.02) { break; }
+    if (radius > 35. && dot(pos,ray)>0.) { break; }
+    let ds = clamp(radius*.075,.045,1.5);
+    let accel = -1.5*h2*pos/pow(radius,5.);
+    let next = pos+ray*ds+accel*(.5*ds*ds);
+    let nextRadius = max(length(next),.5);
+    let nextAccel = -1.5*h2*next/pow(nextRadius,5.);
+    if (pos.y*next.y <= 0. && abs(pos.y-next.y) > .000001) {
+      let hit = mix(pos,next,clamp(pos.y/(pos.y-next.y),0.,1.));
+      let diskRadius = length(hit.xz);
+      if (diskRadius > 2.5 && diskRadius < 9.) {
+        let emission = textureSampleLevel(disk,linearSampler,hit.xz/20.+.5,0.).rgb;
+        // Modest approaching/receding asymmetry, preserving the film's warm grading.
+        let orbital = normalize(vec3f(-hit.z,0.,hit.x));
+        let beaming = clamp(1.+dot(orbital,-normalize(ray))*.23,.7,1.3);
+        light += emission*transmission*beaming*.18;
+        transmission *= .42;
+      }
+    }
+    ray += (accel+nextAccel)*(.5*ds);
+    pos = next;
+  }
+  return vec4f(light,1.);
 }
 `;
 export const downsampleShader = fullscreen + /* wgsl */`
@@ -202,10 +287,21 @@ export const compositeShader = common + fullscreen + /* wgsl */`
     + textureSample(bloom2,linearSampler,uv).rgb*.8
     + textureSample(bloom3,linearSampler,uv).rgb*1.1
     + textureSample(bloom4,linearSampler,uv).rgb*1.5;
-  let hdr = (base + bloom*u.render.y)*u.render.z;
+  var bloomScale = 1.;
+  if (u.flow.w > 2.5) {
+    let screen = (uv*2.-1.)*vec2f(u.misc.x/u.misc.y,-1.);
+    let focal = length(vec3f(u.vp[0].y,u.vp[1].y,u.vp[2].y));
+    let ray = normalize(-normalize(cross(u.right.xyz,u.up.xyz))+(u.right.xyz*screen.x+u.up.xyz*screen.y)/focal);
+    let impact = length(cross(u.eye.xyz,ray));
+    // Art-directed glare rejection inside the shadow; foreground disk emission survives.
+    let shadow = smoothstep(2.5,2.8,impact);
+    bloomScale = .4*max(shadow,smoothstep(.01,.16,length(base)));
+  }
+  let hdr = (base + bloom*u.render.y*bloomScale)*u.render.z;
   let mapped = 1.-exp(-hdr);
   let vignette = 1.-smoothstep(.25,.85,length((uv-.5)*vec2f(1.,.85)))*.38;
-  let bg = vec3f(.018,.030,.039) + vec3f(.006,.012,.012)*exp(-dot(uv-.5,uv-.5)*5.);
+  var bg = vec3f(.018,.030,.039) + vec3f(.006,.012,.012)*exp(-dot(uv-.5,uv-.5)*5.);
+  if (u.flow.w > 2.5) { bg = vec3f(.0015,.0013,.001); }
   let grain = (random(u32(o.position.x)+u32(o.position.y)*8192u)-.5)/255.;
   return vec4f((pow(mapped,vec3f(1./2.2))+bg)*vignette+grain,1.);
 }

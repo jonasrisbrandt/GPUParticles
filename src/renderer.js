@@ -1,4 +1,4 @@
-import {simulation,particleShader,downsampleShader,compositeShader,blurShader} from './shaders.js';
+import {simulation,particleShader,downsampleShader,compositeShader,blurShader,blackHoleShader} from './shaders.js';
 
 export class Renderer {
   constructor(canvas){this.canvas=canvas;this.uniforms=new Float32Array(48);this.time=0;this.needsReset=true;this.seed=42;this.frames=0;this.errors=[];}
@@ -16,7 +16,7 @@ export class Renderer {
     this.context.configure({device,format:this.format,alphaMode:'opaque'});
     this.uniformBuffer=device.createBuffer({label:'Frame uniforms',size:192,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
     const modules=[];
-    for(const [label,code] of [['Simulation',simulation],['Particles',particleShader],['Bloom',downsampleShader],['Composite',compositeShader],['Bloom smoothing',blurShader]]) {
+    for(const [label,code] of [['Simulation',simulation],['Particles',particleShader],['Bloom',downsampleShader],['Composite',compositeShader],['Bloom smoothing',blurShader],['Black hole lensing',blackHoleShader]]) {
       const module=device.createShaderModule({label,code});
       const info=await module.getCompilationInfo();
       const errors=info.messages.filter(m=>m.type==='error');
@@ -27,12 +27,17 @@ export class Renderer {
     this.initPipeline=await device.createComputePipelineAsync({label:'Seed particles',layout:'auto',compute:{module:modules[0],entryPoint:'init'}});
     this.computePipeline=await device.createComputePipelineAsync({label:'Advect particles',layout:'auto',compute:{module:modules[0],entryPoint:'update'}});
     this.particlePipeline=await device.createRenderPipelineAsync({label:'HDR particle streaks',layout:'auto',vertex:{module:modules[1],entryPoint:'vs'},fragment:{module:modules[1],entryPoint:'fs',targets:[{format:'rgba16float',blend:{color:{srcFactor:'one',dstFactor:'one',operation:'add'},alpha:{srcFactor:'zero',dstFactor:'one',operation:'add'}}}]},primitive:{topology:'triangle-list'}});
+    this.diskPipeline=await device.createRenderPipelineAsync({label:'Particle accretion emission',layout:'auto',vertex:{module:modules[1],entryPoint:'vsDisk'},fragment:{module:modules[1],entryPoint:'fs',targets:[{format:'rgba16float',blend:{color:{srcFactor:'one',dstFactor:'one',operation:'add'},alpha:{srcFactor:'zero',dstFactor:'one',operation:'add'}}}]}});
+    this.blackHolePipeline=await device.createRenderPipelineAsync({label:'Curved rays through particle disk',layout:'auto',vertex:{module:modules[5],entryPoint:'vs'},fragment:{module:modules[5],entryPoint:'fs',targets:[{format:'rgba16float'}]}});
     this.bloomPipeline=await device.createRenderPipelineAsync({label:'Bloom pyramid',layout:'auto',vertex:{module:modules[2],entryPoint:'vs'},fragment:{module:modules[2],entryPoint:'fs',targets:[{format:'rgba16float'}]}});
     this.compositePipeline=await device.createRenderPipelineAsync({label:'Bloom and tone map',layout:'auto',vertex:{module:modules[3],entryPoint:'vs'},fragment:{module:modules[3],entryPoint:'fs',targets:[{format:this.format}]}});
     this.blurPipelines=[];
     for(const entryPoint of ['horizontal','vertical'])this.blurPipelines.push(await device.createRenderPipelineAsync({label:`Bloom ${entryPoint}`,layout:'auto',vertex:{module:modules[4],entryPoint:'vs'},fragment:{module:modules[4],entryPoint,targets:[{format:'rgba16float'}]}}));
     const error=await device.popErrorScope();if(error) throw error;
     this.sampler=device.createSampler({minFilter:'linear',magFilter:'linear'});
+    this.diskTexture=device.createTexture({label:'Accretion emission atlas',size:[1024,1024],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
+    this.diskView=this.diskTexture.createView();
+    this.blackHoleGroup=device.createBindGroup({layout:this.blackHolePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniformBuffer}},{binding:1,resource:this.diskView},{binding:2,resource:this.sampler}]});
     this.setCount(Math.min(524288,this.maxCount));
     this.resize();
   }
@@ -45,6 +50,7 @@ export class Renderer {
     this.initGroup=this.device.createBindGroup({layout:this.initPipeline.getBindGroupLayout(0),entries});
     this.computeGroup=this.device.createBindGroup({layout:this.computePipeline.getBindGroupLayout(0),entries});
     this.particleGroup=this.device.createBindGroup({layout:this.particlePipeline.getBindGroupLayout(0),entries});
+    this.diskGroup=this.device.createBindGroup({layout:this.diskPipeline.getBindGroupLayout(0),entries});
     this.needsReset=true;
   }
   reset(){this.needsReset=true;this.seed=(this.seed+7919)%1000000;this.time=0;}
@@ -82,8 +88,14 @@ export class Renderer {
     if(this.needsReset){compute.setPipeline(this.initPipeline);compute.setBindGroup(0,this.initGroup);compute.dispatchWorkgroups(Math.ceil(this.count/256));this.needsReset=false;}
     compute.setPipeline(this.computePipeline);compute.setBindGroup(0,this.computeGroup);compute.dispatchWorkgroups(Math.ceil(this.count/256));compute.end();
     const attachment=view=>({view,clearValue:{r:0,g:0,b:0,a:1},loadOp:'clear',storeOp:'store'});
+    if(settings.preset===3){
+      const disk=encoder.beginRenderPass({colorAttachments:[attachment(this.diskView)]});
+      disk.setPipeline(this.diskPipeline);disk.setBindGroup(0,this.diskGroup);disk.draw(6,this.count);disk.end();
+    }
     const scene=encoder.beginRenderPass({colorAttachments:[attachment(this.views[0])]});
-    scene.setPipeline(this.particlePipeline);scene.setBindGroup(0,this.particleGroup);scene.draw(6,this.count);scene.end();
+    if(settings.preset===3){scene.setPipeline(this.blackHolePipeline);scene.setBindGroup(0,this.blackHoleGroup);scene.draw(3);}
+    else {scene.setPipeline(this.particlePipeline);scene.setBindGroup(0,this.particleGroup);scene.draw(6,this.count);}
+    scene.end();
     for(let i=0;i<5;i++){
       const bloom=encoder.beginRenderPass({colorAttachments:[attachment(this.views[i+1])]});
       bloom.setPipeline(this.bloomPipeline);bloom.setBindGroup(0,this.bloomGroups[i]);bloom.draw(3);bloom.end();

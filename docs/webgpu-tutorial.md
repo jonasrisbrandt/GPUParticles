@@ -4,6 +4,8 @@ Den här guiden fortsätter där tutorialen för GeometryWars / NEON RIFT slutad
 
 Exemplen bygger på AETHERs nuvarande kod. Utdrag är ibland omformaterade eller förenklade; sådana förenklingar anges. Förslag på utbyggnader beskrivs separat från det som redan finns.
 
+Guidens renderkedja beskriver Vortex, Nebula och Stream. Den senare tillagda fjärde formationen har en egen genomgång: [Black hole – från partikeldata till böjda ljusbanor](black-hole.md). Där används en emissionsatlas och ett strålspårningspass i stället för den vanliga perspektivritningen av partikelstreck: totalt 18 renderpass. Atlasen allokeras vid start och tillför 8 MiB även när ett annat läge är valt.
+
 Ha gärna demon igång medan du läser: kör `npm start` i projektmappen och öppna [AETHER](http://127.0.0.1:5174). Börja med Vortex och 524 288 partiklar. Högerdrag roterar kameran, vänsterdrag påverkar partiklarna och `H` döljer gränssnittet. Alla kontroller finns i [README](../README.md).
 
 ## 1. Vad har ändrats sedan GeometryWars?

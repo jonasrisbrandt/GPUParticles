@@ -36,6 +36,10 @@ Muskraftens centrum ligger på ett plan genom kamerans fokuspunkt, vinkelrätt m
 
 ## Simuleringen
 
+**Black hole** är den fjärde formationen: en tunn ackretionsskiva av GPU-partiklar, ett mörkt centrum och gravitationellt böjda ljusbanor. Läget väljer automatiskt den Interstellar-inspirerade paletten **Gargantua** med bärnsten, guld och vitgul innerkant, samt en låg kameravinkel. Musen påverkar materialet i skivplanet; kamera, paus, impuls och antalsreglage fungerar som vanligt. Den tidigare paletten återställs när du lämnar läget.
+
+Detta är en förenklad visualisering av ett icke-roterande svart hål, inte filmens Kerr-simulering. Ljusbanorna samplar en 1024×1024 HDR-bild av de faktiska partiklarna; strålspårningen och denna extra textur (8 MiB) gör läget tyngre än övriga formationer. Läs [så fungerar Black hole](docs/black-hole.md).
+
 Vortex bildar en turbulent torus, Nebula ett viktlöst moln och Stream fem helixströmmar. Ett analytiskt divergensfritt ABC-fält i två skalor skapar fluidliknande rörelse. Formationernas egna krafter, tröghet och mjuk begränsning håller flödet samlat. Det är en visuell flödessimulering, inte en fysikalisk vätskesolver med tryck, densitet eller partikelkollisioner.
 
 Varje partikel använder 32 byte: position + färgfrö och hastighet + återstående livslängd. Initiering, återfödelse och rörelse sker i compute shaders (256 trådar per arbetsgrupp). Ingen partikeldata läses tillbaka till CPU:n under körning. En instansierad draw skapar hastighetsorienterade ljusstreck i ett HDR-mål (`rgba16float`). Fem bloom-nivåer kombineras före tonmappning. Färg följer positionen i flödet; ljusstyrkan kompenseras efter antalet partiklar.
@@ -55,6 +59,8 @@ För att uppdatera: kör `npm test`, provkör lokalt med `npm start`, committa o
 ### Tester och kod
 
 `npm test` verifierar WebGPU-kamerans djupkonvention, musplanets projektion och kameragränser. Shaderkompilering kontrolleras vid start, och GPU-fel visas i gränssnittet. `window.aether.diagnostics` visar aktuell konfiguration, renderade bildrutor och GPU-fel i webbläsarkonsolen.
+
+För GPU-integrationstester: starta servern och öppna [GPU checks](http://127.0.0.1:5174/tests/gpu-smoke.html). Testet kompilerar samtliga shaders, växlar formationer och bufferstorlekar, läser tillbaka poster från bufferns båda ändar och verifierar ändligt tillstånd samt paus/fortsättning. GPU-readback används endast i testet.
 
 - `src/shaders.js`: GPU-simulering, partiklar, bloom och tonmappning.
 - `src/renderer.js`: GPU-resurser och renderpass.

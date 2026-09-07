@@ -16,7 +16,7 @@ export function perspective(fov,aspect,near,far) {
 }
 export class Camera {
   constructor(){this.reset();}
-  reset(){this.target=[0,0,0];this.yaw=.24;this.pitch=.42;this.distance=22;this.fov=Math.PI/3.2;this.update(1);}
+  reset(preset=0){this.target=[0,0,0];this.yaw=.24;this.pitch=preset===3?.12:.42;this.distance=preset===3?25:22;this.fov=Math.PI/3.2;this.update(1);}
   update(aspect){
     this.eye=add(this.target,scale([Math.sin(this.yaw)*Math.cos(this.pitch),Math.sin(this.pitch),Math.cos(this.yaw)*Math.cos(this.pitch)],this.distance));
     this.forward=normalize(sub(this.target,this.eye));this.right=normalize(cross(this.forward,[0,1,0]));this.up=cross(this.right,this.forward);

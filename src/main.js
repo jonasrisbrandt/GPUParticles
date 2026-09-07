@@ -23,19 +23,26 @@ function updateCount(){
   $('memory').textContent=`${Math.round(count*32/1024/1024)} MB`;
 }
 $('count').addEventListener('change',()=>{try{renderer.setCount(Number($('count').value));updateCount();}catch(e){fail(e);}});
-const names=['VORTEX','NEBULA','STREAM'];
-const notes=['Ett roterande fält av sammanflätade virvlar.','Ett viktlöst moln av långsamt böljande ljus.','Fem strömmar i en ändlös, turbulent helix.'];
+const names=['VORTEX','NEBULA','STREAM','BLACK HOLE'];
+const notes=['Ett roterande fält av sammanflätade virvlar.','Ett viktlöst moln av långsamt böljande ljus.','Fem strömmar i en ändlös, turbulent helix.','En glödande ackretionsskiva. Ljus böjs runt mörkret.'];
+let previousPalette=0;
+function selectPalette(value){
+  settings.palette=value;
+  document.querySelectorAll('.palette').forEach(b=>{const active=Number(b.dataset.palette)===value;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
+}
 document.querySelectorAll('.preset').forEach(button=>button.addEventListener('click',()=>{
+  const previous=settings.preset;
   settings.preset=Number(button.dataset.preset);
+  if(settings.preset===3&&previous!==3){previousPalette=settings.palette;selectPalette(3);camera.reset(3);}
+  if(previous===3&&settings.preset!==3){selectPalette(previousPalette);camera.reset();}
   document.querySelectorAll('.preset').forEach(b=>{const active=b===button;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
   $('scene-index').textContent=`0${settings.preset+1} / ${names[settings.preset]}`;$('preset-note').textContent=notes[settings.preset];renderer.reset();
 }));
 document.querySelectorAll('.palette').forEach(button=>button.addEventListener('click',()=>{
-  settings.palette=Number(button.dataset.palette);
-  document.querySelectorAll('.palette').forEach(b=>{const active=b===button;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
+  selectPalette(Number(button.dataset.palette));
 }));
 function pause(){paused=!paused;$('pause').textContent=paused?'▷ Fortsätt':'Ⅱ Pausa';$('status').textContent=paused?'PAUSAD':'LIVE SIMULATION';}
-function reset(){renderer.reset();camera.reset();burst=0;}
+function reset(){renderer.reset();camera.reset(settings.preset);burst=0;}
 function toggleUI(){const hidden=document.body.classList.toggle('ui-hidden');$('show').hidden=!hidden;}
 $('pause').addEventListener('click',pause);$('reset').addEventListener('click',reset);$('hide').addEventListener('click',toggleUI);$('show').addEventListener('click',toggleUI);
 function clearInput(){keys.clear();pointer.button=-1;pointer.strength=0;pointer.id=null;$('pointer').style.display='none';}
