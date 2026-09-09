@@ -19,13 +19,13 @@ for(const name of ['turbulence','speed','force','bloom','size','exposure']){
 }
 function updateCount(){
   const count=renderer.count;
-  $('count').value=String(count);$('count-value').value=count.toLocaleString('sv-SE');
+  $('count').value=String(count);$('count-value').value=count.toLocaleString('en-US');
   $('particle-stat').textContent=count>=1000000?(count/1000000).toFixed(2)+'M':Math.round(count/1000)+'K';
   $('memory').textContent=`${Math.round(count*32/1024/1024)} MB`;
 }
 $('count').addEventListener('change',()=>{try{renderer.setCount(Number($('count').value));renderer.reset();updateCount();}catch(e){fail(e);}});
 const names=['VORTEX','NEBULA','STREAM','BLACK HOLE','NAVIER–STOKES'];
-const notes=['Ett roterande fält av sammanflätade virvlar.','Ett viktlöst moln av långsamt böljande ljus.','Fem strömmar i en ändlös, turbulent helix.','En glödande ackretionsskiva. Ljus böjs runt mörkret.','En krympande virvelkärna med allt snabbare rotation.'];
+const notes=['A rotating field of intertwined vortices.','A weightless cloud of slowly rippling light.','Five streams in an endless, turbulent helix.','A glowing accretion disk. Light bends around darkness.','A contracting vortex core with accelerating rotation.'];
 let previousPalette=0;
 function selectPalette(value){
   settings.palette=value;
@@ -58,11 +58,11 @@ function updateCollapse(){
   $('collapse-phase').value=String(state.progress*100);
   $('collapse-phase').style.setProperty('--fill',`${state.progress*100}%`);
   $('collapse-time').value=`t = ${state.t.toFixed(3)}`;
-  $('collapse-metrics').textContent=`Radie ×${state.guideRadius.toFixed(2)} · höjd ×${state.guideHeight.toFixed(2)}`;
-  const colors=settings.palette===0?'Turkos → blått → guld':settings.palette===1?'Lila → mint':settings.palette===2?'Rött → guld':'Bärnsten → vitgult';
-  $('collapse-state').textContent=state.done?'Visningsgräns nådd · dra tillbaka tiden eller återställ.':`${colors}: yttre spiral → axial kärna.`;
+  $('collapse-metrics').textContent=`Radius ×${state.guideRadius.toFixed(2)} · height ×${state.guideHeight.toFixed(2)}`;
+  const colors=settings.palette===0?'Teal → blue → gold':settings.palette===1?'Purple → mint':settings.palette===2?'Red → gold':'Amber → pale gold';
+  $('collapse-state').textContent=state.done?'Timeline complete · scrub backward or reset.':`${colors}: outer spiral → axial core.`;
 }
-function pause(){paused=!paused;$('pause').textContent=paused?'▷ Fortsätt':'Ⅱ Pausa';$('status').textContent=paused?'PAUSAD':'LIVE SIMULATION';}
+function pause(){paused=!paused;$('pause').textContent=paused?'▷ Resume':'Ⅱ Pause';$('status').textContent=paused?'PAUSED':'LIVE SIMULATION';}
 function reset(){renderer.reset();camera.reset(settings.preset);burst=0;}
 function toggleUI(){const hidden=document.body.classList.toggle('ui-hidden');$('show').hidden=!hidden;}
 $('pause').addEventListener('click',pause);$('reset').addEventListener('click',reset);$('hide').addEventListener('click',toggleUI);$('show').addEventListener('click',toggleUI);

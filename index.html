@@ -1,39 +1,39 @@
 <!doctype html>
-<html lang="sv">
+<html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b10"><title>AETHER — Particle flow laboratory</title><link rel="stylesheet" href="style.css"></head>
 <body>
-  <canvas id="scene" aria-label="Interaktiv tredimensionell partikelsimulering"></canvas>
+  <canvas id="scene" aria-label="Interactive 3D particle simulation"></canvas>
   <div id="pointer" aria-hidden="true"><i></i><span>ATTRACT</span></div>
-  <header class="ui"><a class="brand" href="./" aria-label="Aether"><span class="brand-mark">✳</span> AETHER<span class="version">/ 01</span></a><div class="tagline">PARTICLE FLOW LABORATORY</div><div class="live"><i></i><span id="status">INITIALISERAR</span></div></header>
+  <header class="ui"><a class="brand" href="./" aria-label="Aether"><span class="brand-mark">✳</span> AETHER<span class="version">/ 01</span></a><div class="tagline">PARTICLE FLOW LABORATORY</div><div class="live"><i></i><span id="status">INITIALIZING</span></div></header>
   <main class="ui">
-    <div class="intro"><div class="eyebrow">REALTIME EXPERIMENT / WEBGPU</div><h1>Order in<br><em>the chaos.</em></h1><p>Ett levande flöde av ljus.<br>Rör musen. Forma turbulensen.</p></div>
-    <aside id="panel" aria-label="Inställningar">
+    <div class="intro"><div class="eyebrow">REALTIME EXPERIMENT / WEBGPU</div><h1>Order in<br><em>the chaos.</em></h1><p>A living flow of light.<br>Move your mouse. Shape the turbulence.</p></div>
+    <aside id="panel" aria-label="Settings">
       <div class="panel-heading"><span>FLOW CONTROLS</span><span class="small-mark">↗</span></div>
-      <section><div class="section-label">01 <span>FORMATION</span></div><div class="presets"><button class="preset active" data-preset="0" aria-pressed="true"><span>◎</span>Vortex</button><button class="preset" data-preset="1" aria-pressed="false"><span>≋</span>Nebula</button><button class="preset" data-preset="2" aria-pressed="false"><span>⌁</span>Stream</button><button class="preset" data-preset="3" aria-pressed="false"><span>◉</span>Black hole</button><button class="preset" data-preset="4" aria-pressed="false"><span>⥮</span>Navier–Stokes</button></div><p id="preset-note" class="note">Ett roterande fält av sammanflätade virvlar.</p></section>
-      <section id="collapse-controls" hidden aria-label="Navier–Stokes tidslinje">
-        <div class="section-label">NS <span>KOLLAPS / SKALMODELL</span></div>
-        <label for="collapse-phase">Mot singulariteten <output id="collapse-time">t = 0.000</output></label>
+      <section><div class="section-label">01 <span>FORMATION</span></div><div class="presets"><button class="preset active" data-preset="0" aria-pressed="true"><span>◎</span>Vortex</button><button class="preset" data-preset="1" aria-pressed="false"><span>≋</span>Nebula</button><button class="preset" data-preset="2" aria-pressed="false"><span>⌁</span>Stream</button><button class="preset" data-preset="3" aria-pressed="false"><span>◉</span>Black hole</button><button class="preset" data-preset="4" aria-pressed="false"><span>⥮</span>Navier–Stokes</button></div><p id="preset-note" class="note">A rotating field of intertwined vortices.</p></section>
+      <section id="collapse-controls" hidden aria-label="Navier–Stokes timeline">
+        <div class="section-label">NS <span>COLLAPSE / SCALE MODEL</span></div>
+        <label for="collapse-phase">Toward the singularity <output id="collapse-time">t = 0.000</output></label>
         <input id="collapse-phase" type="range" min="0" max="100" step="0.1" value="0">
-        <p id="collapse-metrics" class="collapse-metrics">Radie ×1.00 · höjd ×1.00</p>
-        <p id="collapse-state" class="collapse-copy">Turkos → blått → guld: yttre spiral → axial kärna.</p>
-        <p class="collapse-copy">Partiklar längs osynliga spiralguider. Formgiven kollaps med förstärkt axial sträckning. Dra tidsreglaget för att spela framåt eller bakåt.</p>
-        <a class="collapse-link" href="https://github.com/jonasrisbrandt/GPUParticles/blob/main/docs/navier-stokes.md" target="_blank" rel="noopener">Modellen & källorna ↗</a>
+        <p id="collapse-metrics" class="collapse-metrics">Radius ×1.00 · height ×1.00</p>
+        <p id="collapse-state" class="collapse-copy">Teal → blue → gold: outer spiral → axial core.</p>
+        <p class="collapse-copy">Particles follow invisible spiral guides. A stylized collapse with enhanced axial stretching. Drag the timeline to play forward or backward.</p>
+        <a class="collapse-link" href="https://github.com/jonasrisbrandt/GPUParticles/blob/main/docs/navier-stokes.md" target="_blank" rel="noopener">Model & sources (Swedish) ↗</a>
       </section>
-      <section><div class="section-label">02 <span>SIMULERING</span></div><label for="count">Partiklar <output id="count-value">524 288</output></label><select id="count"><option value="65536">65 536 · lätt</option><option value="262144">262 144</option><option value="524288" selected>524 288</option><option value="1048576">1 048 576 · 1M</option><option value="2097152">2 097 152 · 2M</option><option value="4194304">4 194 304 · 4M</option></select><div class="scale-note"><span>GPU COMPUTE</span><span id="memory">16 MB</span></div>
-      <label for="turbulence">Turbulens <output id="turbulence-value">0.75</output></label><input id="turbulence" type="range" min="0" max="2" step="0.01" value="0.75">
-      <label for="speed">Flödeshastighet <output id="speed-value">1.00</output></label><input id="speed" type="range" min="0.1" max="2" step="0.01" value="1">
-      <label for="force">Muskraft <output id="force-value">1.20</output></label><input id="force" type="range" min="0" max="3" step="0.01" value="1.2"></section>
-      <section><div class="section-label">03 <span>LJUS & FÄRG</span></div><div class="palette-row" role="group" aria-label="Färgpalett"><button class="palette active" data-palette="0" aria-label="Ion: turkos och orange" aria-pressed="true" title="Ion"><i style="--swatch:linear-gradient(135deg,#41ecd7 45%,#ff9c55 70%)"></i>Ion</button><button class="palette" data-palette="1" aria-label="Aurora: lila och mint" aria-pressed="false" title="Aurora"><i style="--swatch:linear-gradient(135deg,#9a70ff,#62ffc5)"></i>Aurora</button><button class="palette" data-palette="2" aria-label="Ember: rött och guld" aria-pressed="false" title="Ember"><i style="--swatch:linear-gradient(135deg,#ff385b,#ffc86b)"></i>Ember</button><button class="palette" data-palette="3" aria-label="Gargantua: bärnsten, guld och vitgult" aria-pressed="false" title="Gargantua"><i style="--swatch:linear-gradient(135deg,#b95c15,#ffd891,#fff4da)"></i>Gargantua</button></div>
+      <section><div class="section-label">02 <span>SIMULATION</span></div><label for="count">Particles <output id="count-value">524,288</output></label><select id="count"><option value="65536">65,536 · light</option><option value="262144">262,144</option><option value="524288" selected>524,288</option><option value="1048576">1,048,576 · 1M</option><option value="2097152">2,097,152 · 2M</option><option value="4194304">4,194,304 · 4M</option></select><div class="scale-note"><span>GPU COMPUTE</span><span id="memory">16 MB</span></div>
+      <label for="turbulence">Turbulence <output id="turbulence-value">0.75</output></label><input id="turbulence" type="range" min="0" max="2" step="0.01" value="0.75">
+      <label for="speed">Flow speed <output id="speed-value">1.00</output></label><input id="speed" type="range" min="0.1" max="2" step="0.01" value="1">
+      <label for="force">Mouse force <output id="force-value">1.20</output></label><input id="force" type="range" min="0" max="3" step="0.01" value="1.2"></section>
+      <section><div class="section-label">03 <span>LIGHT & COLOR</span></div><div class="palette-row" role="group" aria-label="Color palette"><button class="palette active" data-palette="0" aria-label="Ion: teal and orange" aria-pressed="true" title="Ion"><i style="--swatch:linear-gradient(135deg,#41ecd7 45%,#ff9c55 70%)"></i>Ion</button><button class="palette" data-palette="1" aria-label="Aurora: purple and mint" aria-pressed="false" title="Aurora"><i style="--swatch:linear-gradient(135deg,#9a70ff,#62ffc5)"></i>Aurora</button><button class="palette" data-palette="2" aria-label="Ember: red and gold" aria-pressed="false" title="Ember"><i style="--swatch:linear-gradient(135deg,#ff385b,#ffc86b)"></i>Ember</button><button class="palette" data-palette="3" aria-label="Gargantua: amber, gold and pale yellow" aria-pressed="false" title="Gargantua"><i style="--swatch:linear-gradient(135deg,#b95c15,#ffd891,#fff4da)"></i>Gargantua</button></div>
       <label for="bloom">Bloom <output id="bloom-value">0.85</output></label><input id="bloom" type="range" min="0" max="2" step="0.01" value="0.85">
-      <label for="size">Partikelstorlek <output id="size-value">1.20</output></label><input id="size" type="range" min="0.5" max="2.5" step="0.01" value="1.2">
-      <label for="exposure">Exponering <output id="exposure-value">1.00</output></label><input id="exposure" type="range" min="0.3" max="2" step="0.01" value="1"></section>
-      <div class="panel-actions"><button id="pause" title="Mellanslag">Ⅱ Pausa</button><button id="reset" title="R">↻ Återställ</button></div>
+      <label for="size">Particle size <output id="size-value">1.20</output></label><input id="size" type="range" min="0.5" max="2.5" step="0.01" value="1.2">
+      <label for="exposure">Exposure <output id="exposure-value">1.00</output></label><input id="exposure" type="range" min="0.3" max="2" step="0.01" value="1"></section>
+      <div class="panel-actions"><button id="pause" title="Space">Ⅱ Pause</button><button id="reset" title="R">↻ Reset</button></div>
     </aside>
     <div class="scene-caption"><span id="scene-index">01 / VORTEX</span><div class="caption-line"></div><span>DRAG TO DISTURB</span></div>
   </main>
-  <footer class="ui"><div class="stats"><span><b id="fps">—</b> FPS</span><span><b id="particle-stat">524K</b> PARTICLES</span><span class="gpu-label" id="gpu-label">GPU RESIDENT</span></div><div class="shortcuts"><span><kbd>LMB</kbd> dra till · <kbd>Shift</kbd> stöt bort</span><span><kbd>RMB</kbd> rotera</span><span><kbd>WASD</kbd> flytta</span><span><kbd>Scroll</kbd> zoom</span></div><button id="hide" title="H: visa/dölj kontroller">Dölj UI <kbd>H</kbd></button></footer>
-  <button id="show" hidden>Visa kontroller <kbd>H</kbd></button>
-  <div id="loading"><div class="loader-mark">✳</div><h2>Väcker flödet.</h2><p id="loading-message">Förbereder GPU och partiklar…</p></div>
-  <div id="error" hidden role="alert"><div><span class="eyebrow">AETHER / GPU STATUS</span><h2 id="error-title">Kunde inte starta flödet.</h2><p id="error-message"></p><button onclick="location.reload()">Försök igen</button></div></div>
+  <footer class="ui"><div class="stats"><span><b id="fps">—</b> FPS</span><span><b id="particle-stat">524K</b> PARTICLES</span><span class="gpu-label" id="gpu-label">GPU RESIDENT</span></div><div class="shortcuts"><span><kbd>LMB</kbd> attract · <kbd>Shift</kbd> repel</span><span><kbd>RMB</kbd> orbit</span><span><kbd>WASD</kbd> move</span><span><kbd>Scroll</kbd> zoom</span></div><button id="hide" title="H: show/hide controls">Hide UI <kbd>H</kbd></button></footer>
+  <button id="show" hidden>Show controls <kbd>H</kbd></button>
+  <div id="loading"><div class="loader-mark">✳</div><h2>Awakening the flow.</h2><p id="loading-message">Preparing GPU and particles…</p></div>
+  <div id="error" hidden role="alert"><div><span class="eyebrow">AETHER / GPU STATUS</span><h2 id="error-title">Could not start the flow.</h2><p id="error-message"></p><button onclick="location.reload()">Try again</button></div></div>
   <script type="module" src="src/main.js"></script>
 </body></html>

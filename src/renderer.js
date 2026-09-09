@@ -4,14 +4,14 @@ import {simulation,particleShader,downsampleShader,compositeShader,blurShader,bl
 export class Renderer {
   constructor(canvas){this.canvas=canvas;this.uniforms=new Float32Array(48);this.time=0;this.needsReset=true;this.seed=42;this.frames=0;this.errors=[];}
   async init(){
-    if(!navigator.gpu) throw new Error('WebGPU saknas. Öppna sidan i Chrome eller Edge med hårdvaruacceleration, via localhost eller HTTPS.');
+    if(!navigator.gpu) throw new Error('WebGPU is unavailable. Open this page in Chrome or Edge with hardware acceleration enabled, using localhost or HTTPS.');
     const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
-    if(!adapter) throw new Error('Ingen WebGPU-kompatibel grafikprocessor hittades. Kontrollera att hårdvaruacceleration är aktiverad i webbläsaren.');
+    if(!adapter) throw new Error('No WebGPU-compatible graphics adapter was found. Check that hardware acceleration is enabled in your browser.');
     this.maxCount=Math.min(4194304,Math.floor(Math.min(adapter.limits.maxStorageBufferBindingSize,adapter.limits.maxBufferSize)/32/256)*256);
     const device=this.device=await adapter.requestDevice({requiredLimits:{maxStorageBufferBindingSize:this.maxCount*32,maxBufferSize:this.maxCount*32}});
     this.adapterName=adapter.info?.description || adapter.info?.device || adapter.info?.vendor || 'WebGPU';
     device.addEventListener('uncapturederror',e=>{this.errors.push(e.error.message);this.onError?.(new Error(e.error.message));});
-    device.lost.then(info=>this.onError?.(new Error(`GPU-anslutningen bröts: ${info.message || info.reason}. Ladda om sidan för att starta om.`)));
+    device.lost.then(info=>this.onError?.(new Error(`The GPU connection was lost: ${info.message || info.reason}. Reload the page to restart.`)));
     this.context=this.canvas.getContext('webgpu');
     this.format=navigator.gpu.getPreferredCanvasFormat();
     this.context.configure({device,format:this.format,alphaMode:'opaque'});
@@ -43,7 +43,7 @@ export class Renderer {
     this.resize();
   }
   setCount(count){
-    if(!Number.isInteger(count)||count<256||count>this.maxCount) throw new Error('Partikelantalet stöds inte av denna GPU.');
+    if(!Number.isInteger(count)||count<256||count>this.maxCount) throw new Error('This particle count is not supported by this GPU.');
     this.count=count;
     this.particleBuffer?.destroy();
     this.particleBuffer=this.device.createBuffer({label:`${count} particles / 32 bytes`,size:count*32,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
