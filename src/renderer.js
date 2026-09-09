@@ -1,3 +1,4 @@
+import {collapseState,COLLAPSE_DURATION} from './collapse.js';
 import {simulation,particleShader,downsampleShader,compositeShader,blurShader,blackHoleShader} from './shaders.js';
 
 export class Renderer {
@@ -76,10 +77,14 @@ export class Renderer {
   }
   frame(dt,camera,pointer,settings,burst){
     this.resize();
-    this.time+=dt*settings.speed;
+    if(settings.preset===4){
+      const previousTime=this.time;
+      this.time=Math.min(COLLAPSE_DURATION,this.time+dt*settings.speed);
+      dt=(this.time-previousTime)/settings.speed;
+    }else this.time+=dt*settings.speed;
     const u=this.uniforms;
     u.set(camera.vp,0);u.set([...camera.right,0],16);u.set([...camera.up,0],20);u.set([...camera.eye,0],24);
-    u.set([...pointer.position,pointer.strength],28);u.set([dt,this.time,this.count,0],32);
+    u.set([...pointer.position,pointer.strength],28);u.set([dt,this.time,this.count,collapseState(this.time).tau],32);
     u.set([settings.turbulence,settings.speed,settings.force,settings.preset],36);
     u.set([settings.size,settings.bloom,settings.exposure,settings.palette],40);u.set([this.width,this.height,burst,this.seed],44);
     this.device.queue.writeBuffer(this.uniformBuffer,0,u);

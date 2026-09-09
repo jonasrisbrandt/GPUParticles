@@ -21,3 +21,19 @@ test('extreme zoom and orbit inputs keep the camera finite',()=>{
   assert.equal(c.distance,3);assert.ok([...c.vp,...c.pointer(1,1,.4)].every(Number.isFinite));
   c.zoom(1e6);assert.equal(c.distance,60);
 });
+
+
+import {collapseState,COLLAPSE_DURATION} from '../src/collapse.js';
+test('collapse contracts both axes, grows speed and stops strictly before the singularity',()=>{
+  const start=collapseState(0),end=collapseState(COLLAPSE_DURATION);
+  near(start.radius,1);near(start.height,1);near(start.speed,1);
+  assert.ok(end.radius<end.height&&end.height<1&&end.speed>5);
+  near(end.tau,.04);assert.ok(end.t<1&&end.done);
+  assert.deepEqual(collapseState(1e9),end);
+  assert.deepEqual(collapseState(-10),start);
+  for(let t=0;t<=24;t+=.1){
+    const s=collapseState(t);
+    assert.ok([s.radius,s.height,s.speed,s.tau].every(Number.isFinite));
+    assert.ok(s.tau>0);
+  }
+});

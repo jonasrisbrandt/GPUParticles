@@ -1,3 +1,4 @@
+import {collapseState,COLLAPSE_DURATION} from './collapse.js';
 import {Renderer} from './renderer.js';
 import {Camera,add,scale} from './math.js';
 const $=id=>document.getElementById(id);
@@ -22,9 +23,9 @@ function updateCount(){
   $('particle-stat').textContent=count>=1000000?(count/1000000).toFixed(2)+'M':Math.round(count/1000)+'K';
   $('memory').textContent=`${Math.round(count*32/1024/1024)} MB`;
 }
-$('count').addEventListener('change',()=>{try{renderer.setCount(Number($('count').value));updateCount();}catch(e){fail(e);}});
-const names=['VORTEX','NEBULA','STREAM','BLACK HOLE'];
-const notes=['Ett roterande fält av sammanflätade virvlar.','Ett viktlöst moln av långsamt böljande ljus.','Fem strömmar i en ändlös, turbulent helix.','En glödande ackretionsskiva. Ljus böjs runt mörkret.'];
+$('count').addEventListener('change',()=>{try{renderer.setCount(Number($('count').value));renderer.reset();updateCount();}catch(e){fail(e);}});
+const names=['VORTEX','NEBULA','STREAM','BLACK HOLE','NAVIER–STOKES'];
+const notes=['Ett roterande fält av sammanflätade virvlar.','Ett viktlöst moln av långsamt böljande ljus.','Fem strömmar i en ändlös, turbulent helix.','En glödande ackretionsskiva. Ljus böjs runt mörkret.','En krympande virvelkärna med allt snabbare rotation.'];
 let previousPalette=0;
 function selectPalette(value){
   settings.palette=value;
@@ -35,12 +36,29 @@ document.querySelectorAll('.preset').forEach(button=>button.addEventListener('cl
   settings.preset=Number(button.dataset.preset);
   if(settings.preset===3&&previous!==3){previousPalette=settings.palette;selectPalette(3);camera.reset(3);}
   if(previous===3&&settings.preset!==3){selectPalette(previousPalette);camera.reset();}
+  if(settings.preset===4){selectPalette(0);camera.reset(4);}
+  if(previous===4&&settings.preset<3)camera.reset();
+  $('collapse-controls').hidden=settings.preset!==4;
   document.querySelectorAll('.preset').forEach(b=>{const active=b===button;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
   $('scene-index').textContent=`0${settings.preset+1} / ${names[settings.preset]}`;$('preset-note').textContent=notes[settings.preset];renderer.reset();
 }));
 document.querySelectorAll('.palette').forEach(button=>button.addEventListener('click',()=>{
   selectPalette(Number(button.dataset.palette));
 }));
+$('collapse-phase').addEventListener('input',()=>{
+  renderer.time=Number($('collapse-phase').value)/100*COLLAPSE_DURATION;
+  renderer.needsReset=true;burst=0;updateCollapse();
+});
+function updateCollapse(){
+  if(settings.preset!==4)return;
+  const state=collapseState(renderer.time);
+  $('collapse-phase').value=String(state.progress*100);
+  $('collapse-phase').style.setProperty('--fill',`${state.progress*100}%`);
+  $('collapse-time').value=`t = ${state.t.toFixed(3)}`;
+  $('collapse-metrics').textContent=`Radie ×${state.radius.toFixed(2)} · fartskala ×${state.speed.toFixed(2)}`;
+  const colors=settings.palette===0?'Turkos → orange':settings.palette===1?'Lila → mint':settings.palette===2?'Rött → guld':'Bärnsten → vitgult';
+  $('collapse-state').textContent=state.done?'Visningsgräns nådd · dra tillbaka tiden eller återställ.':`${colors}: långsam → snabb rotation.`;
+}
 function pause(){paused=!paused;$('pause').textContent=paused?'▷ Fortsätt':'Ⅱ Pausa';$('status').textContent=paused?'PAUSAD':'LIVE SIMULATION';}
 function reset(){renderer.reset();camera.reset(settings.preset);burst=0;}
 function toggleUI(){const hidden=document.body.classList.toggle('ui-hidden');$('show').hidden=!hidden;}
@@ -86,7 +104,7 @@ function frame(now){
   // Hover gently stirs the flow; holding left click makes the force stronger.
   pointer.strength=pointer.inside&&pointer.button!==2&&pointer.button!==1?(pointer.button===0?1:.12)*(push?-1:1):0;
   const marker=$('pointer');marker.style.display=pointer.inside&&pointer.button===0?'block':'none';marker.style.left=pointer.x+'px';marker.style.top=pointer.y+'px';marker.classList.toggle('push',push);marker.querySelector('span').textContent=push?'REPEL':'ATTRACT';
-  try{renderer.frame(paused?0:elapsed,camera,pointer,settings,paused?0:burst);burst=0;}catch(e){fail(e);return;}
+  try{renderer.frame(paused?0:elapsed,camera,pointer,settings,paused?0:burst);burst=0;updateCollapse();}catch(e){fail(e);return;}
   fpsTime+=realElapsed;fpsFrames++;
   if(fpsTime>.6){$('fps').textContent=Math.round(fpsFrames/fpsTime);fpsFrames=0;fpsTime=0;}
   raf=requestAnimationFrame(frame);

@@ -695,3 +695,8 @@ Båda vägarna kräver flera ordnade beräkningsfaser och mer lagring. Att jämf
 6. `src/renderer.js`: återvänd till `init()`, `setCount()` och `resize()` för att koppla varje shader till dess resurser.
 
 Som sista övning: följ ett vänsterdrag från muskoordinaterna, genom fokusplanet och uniformbuffern, till en partikels ändrade hastighet. Följ sedan samma post genom perspektivprojektionen, ljusstrecket och bloomnivåerna till slutbilden.
+
+
+## Nytt experiment: Navier–Stokes
+
+AETHER har också ett femte flöde med ett eget analytiskt bakgrundsfält och RK2-advektion på GPU:n. En separat tidslinje följer en kontraherande virvelkärna och stannar vid en ändlig visningsgräns. Det är en illustrativ skalmodell, inte en full Navier–Stokes-solver. [Fortsätt till modellen, shaderformlerna, begränsningarna och källorna](navier-stokes.md).

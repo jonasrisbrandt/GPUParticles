@@ -19,6 +19,22 @@ fn hash(n: u32) -> u32 {
   return x ^ (x >> 16u);
 }
 fn random(n: u32) -> f32 { return f32(hash(n)) / 4294967295.; }
+// Divergence-free illustrative profile, NOT the paper's corrected solution.
+// Streamfunction psi = a*r^2*y*exp(-r^2/R^2-y^2/Z^2).
+fn collapseScales(tau: f32) -> vec2f {
+  return vec2f(3.*sqrt(tau),4.*pow(tau,.495));
+}
+fn collapseVelocity(pos: vec3f, tau: f32) -> vec3f {
+  let scales = collapseScales(tau);
+  let q = dot(pos.xz,pos.xz)/(scales.x*scales.x);
+  let z2 = pos.y*pos.y/(scales.y*scales.y);
+  let envelope = exp(-q-z2);
+  let strain = .7/tau;
+  let radial = -strain*envelope*(1.-2.*z2);
+  let axial = 2.*strain*pos.y*envelope*(1.-q);
+  let omega = 8.*pow(tau,-.505)/scales.x*envelope;
+  return vec3f(radial*pos.x-omega*pos.z,axial,radial*pos.z+omega*pos.x);
+}
 `;
 
 export const simulation = common + /* wgsl */`
@@ -40,16 +56,25 @@ fn spawn(i: u32, epoch: u32) -> Particle {
     let strand = f32(i % 5u)*TAU/5.;
     pos = vec3f(x, sin(x*.65 + strand)*1.5 + cos(b)*r*.3, cos(x*.65 + strand)*1.5 + sin(b)*r*.3);
   }
-  if (u.flow.w > 2.5) {
+  if (u.flow.w > 2.5 && u.flow.w < 3.5) {
     let diskRadius = 3.05 + pow(random(seed + 5u), 1.6)*5.15;
     pos = vec3f(cos(a)*diskRadius, (random(seed + 8u)-.5)*.04, sin(a)*diskRadius);
+  }
+  if (u.flow.w > 3.5) {
+    let scales = collapseScales(u.timing.w);
+    let radius = sqrt(.06+random(seed+5u)*2.5)*scales.x;
+    let height = (random(seed+8u)*2.-1.)*scales.y*1.5;
+    // Helical tracer sheets reveal differential rotation without extra geometry.
+    let angle = f32(i%9u)*TAU/9.+height/scales.y*1.8+(random(seed+9u)-.5)*.3;
+    pos = vec3f(cos(angle)*radius,height,sin(angle)*radius);
   }
   var p: Particle;
   p.position = vec4f(pos, random(seed + 6u));
   p.velocity = vec4f(0.,0.,0.,random(seed + 7u)*22. + 8.);
-  if (u.flow.w > 2.5) {
+  if (u.flow.w > 2.5 && u.flow.w < 3.5) {
     p.velocity = vec4f(normalize(vec3f(-pos.z,0.,pos.x))*sqrt(42./length(pos.xz)), 35.+random(seed+7u)*35.);
   }
+  if (u.flow.w > 3.5) { p.velocity=vec4f(collapseVelocity(pos,u.timing.w),8.+random(seed+7u)*6.); }
   return p;
 }
 @compute @workgroup_size(256) fn init(@builtin(global_invocation_id) id: vec3u) {
@@ -71,6 +96,30 @@ fn curl(p: vec3f, t: f32) -> vec3f {
   let dt = u.timing.x*u.flow.y;
   if (dt <= 0.) { return; }
   var p = particles[i];
+  if (u.flow.w > 3.5) {
+    // The CPU supplies the clipped physical interval, including the final partial frame.
+    let stepTime = dt*.04;
+    let tau = u.timing.w;
+    let startTau = min(1.,tau+stepTime);
+    let start = p.position.xyz;
+    let v0 = collapseVelocity(start,startTau);
+    let midpoint = start+v0*(stepTime*.5);
+    var velocity = collapseVelocity(midpoint,(startTau+tau)*.5);
+    // Artistic perturbations are separate from the analytical background profile.
+    velocity += curl(start,u.timing.y)*u.flow.x*.3;
+    let delta = u.pointer.xyz-start;
+    velocity += delta*u.pointer.w*u.flow.z*18.*exp(-dot(delta,delta)/10.);
+    var next = start+velocity*stepTime;
+    next += normalize(start+vec3f(.001))*u.misc.z*.35;
+    let scales = collapseScales(tau);
+    let normalized = vec3f(next.x/scales.x,next.y/scales.y,next.z/scales.x);
+    p.position = vec4f(next,p.position.w);
+    p.velocity = vec4f(velocity,p.velocity.w-dt);
+    // Tracers sample the shrinking region; they are not equal-mass fluid parcels.
+    if (length(normalized)>3.2 || p.velocity.w<=0.) { p=spawn(i,u32(u.timing.y*71.)+1u); }
+    particles[i]=p;
+    return;
+  }
   let pos = p.position.xyz;
   let t = u.timing.y;
   let radius = max(length(pos.xz), .001);
@@ -90,7 +139,7 @@ fn curl(p: vec3f, t: f32) -> vec3f {
     let center = vec3f(pos.x, sin(phase)*1.5, cos(phase)*1.5);
     flowVelocity = vec3f(2.5, cos(phase)*2.44, -sin(phase)*2.44) - (pos-center)*1.25;
   }
-  if (u.flow.w > 2.5) {
+  if (u.flow.w > 2.5 && u.flow.w < 3.5) {
     // Kepler-like differential rotation, slow accretion and weak planar turbulence.
     flowVelocity = tangent*sqrt(42./max(radius,1.)) - radial*.045 - vec3f(0.,pos.y*5.,0.);
     let eddies = curl(pos,t)*u.flow.x*.16;
@@ -108,9 +157,9 @@ fn curl(p: vec3f, t: f32) -> vec3f {
   vel *= min(1., 16./max(length(vel),.001));
   p.position = vec4f(pos+vel*dt, p.position.w);
   p.velocity = vec4f(vel,p.velocity.w-dt);
-  if (u.flow.w > 2.5) { p.position.y = 0.; p.velocity.y = 0.; }
+  if (u.flow.w > 2.5 && u.flow.w < 3.5) { p.position.y = 0.; p.velocity.y = 0.; }
   if (u.flow.w > 1.5 && u.flow.w < 2.5 && p.position.x > 7.5) { p.position.x -= 15.; }
-  if (p.velocity.w <= 0. || length(p.position.xyz) > 24. || (u.flow.w > 2.5 && length(p.position.xyz) < 2.5)) {
+  if (p.velocity.w <= 0. || length(p.position.xyz) > 24. || (u.flow.w > 2.5 && u.flow.w < 3.5 && length(p.position.xyz) < 2.5)) {
     p = spawn(i, u32(t*7.)+1u);
     p.velocity.w = 22. + p.position.w*20.;
   }
@@ -169,7 +218,12 @@ fn thermalColor(radius: f32) -> vec3f {
   o.local = corner;
   let pos = p.position.xyz;
   let band = sin(pos.x*.38 + pos.z*.31 + pos.y*.45 + u.timing.y*.06)*.5+.5;
-  let hot = smoothstep(.48,.9,band);
+  var hot = smoothstep(.48,.9,band);
+  if (u.flow.w > 3.5) {
+    let scales=collapseScales(u.timing.w);
+    // Relative angular speed, not temperature or tracer density.
+    hot=smoothstep(.06,.6,exp(-dot(pos.xz,pos.xz)/(scales.x*scales.x)-pos.y*pos.y/(scales.y*scales.y)));
+  }
   var coldColor = vec3f(.055,.69,.66);
   var warmColor = vec3f(1.,.27,.065);
   if (u.render.w > .5 && u.render.w < 1.5) { coldColor=vec3f(.35,.12,.95); warmColor=vec3f(.15,1.,.64); }
@@ -181,6 +235,8 @@ fn thermalColor(radius: f32) -> vec3f {
   let depth = exp(-max(clip.w-8.,0.)*.027);
   let fade = smoothstep(0.,1.5,p.velocity.w);
   o.color = mix(coldColor,warmColor,hot)*brightness*density*depth*.012*fade;
+  // Keep the contracting tracer sample from turning into a white, overexposed blob.
+  if (u.flow.w > 3.5) { o.color *= .8*pow(u.timing.w,.75); }
   return o;
 }
 @fragment fn fs(o: Out) -> @location(0) vec4f {
@@ -288,7 +344,7 @@ export const compositeShader = common + fullscreen + /* wgsl */`
     + textureSample(bloom3,linearSampler,uv).rgb*1.1
     + textureSample(bloom4,linearSampler,uv).rgb*1.5;
   var bloomScale = 1.;
-  if (u.flow.w > 2.5) {
+  if (u.flow.w > 2.5 && u.flow.w < 3.5) {
     let screen = (uv*2.-1.)*vec2f(u.misc.x/u.misc.y,-1.);
     let focal = length(vec3f(u.vp[0].y,u.vp[1].y,u.vp[2].y));
     let ray = normalize(-normalize(cross(u.right.xyz,u.up.xyz))+(u.right.xyz*screen.x+u.up.xyz*screen.y)/focal);
@@ -301,7 +357,7 @@ export const compositeShader = common + fullscreen + /* wgsl */`
   let mapped = 1.-exp(-hdr);
   let vignette = 1.-smoothstep(.25,.85,length((uv-.5)*vec2f(1.,.85)))*.38;
   var bg = vec3f(.018,.030,.039) + vec3f(.006,.012,.012)*exp(-dot(uv-.5,uv-.5)*5.);
-  if (u.flow.w > 2.5) { bg = vec3f(.0015,.0013,.001); }
+  if (u.flow.w > 2.5 && u.flow.w < 3.5) { bg = vec3f(.0015,.0013,.001); }
   let grain = (random(u32(o.position.x)+u32(o.position.y)*8192u)-.5)/255.;
   return vec4f((pow(mapped,vec3f(1./2.2))+bg)*vignette+grain,1.);
 }
