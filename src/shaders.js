@@ -22,7 +22,7 @@ fn random(n: u32) -> f32 { return f32(hash(n)) / 4294967295.; }
 // Divergence-free illustrative profile, NOT the paper's corrected solution.
 // Streamfunction psi = a*r^2*y*exp(-r^2/R^2-y^2/Z^2).
 fn collapseScales(tau: f32) -> vec2f {
-  return vec2f(3.*sqrt(tau),4.*pow(tau,.495));
+  return vec2f(4.*sqrt(tau),4.*pow(tau,.495));
 }
 fn collapseVelocity(pos: vec3f, tau: f32) -> vec3f {
   let scales = collapseScales(tau);
@@ -62,10 +62,15 @@ fn spawn(i: u32, epoch: u32) -> Particle {
   }
   if (u.flow.w > 3.5) {
     let scales = collapseScales(u.timing.w);
-    let radius = sqrt(.06+random(seed+5u)*2.5)*scales.x;
-    let height = (random(seed+8u)*2.-1.)*scales.y*1.5;
-    // Helical tracer sheets reveal differential rotation without extra geometry.
-    let angle = f32(i%9u)*TAU/9.+height/scales.y*1.8+(random(seed+9u)-.5)*.3;
+    // Ordered material filaments, paired above and below the inflow plane.
+    let strand = i % 64u;
+    let samples = (u32(u.timing.z)+63u-strand)/64u;
+    let along = f32(i/64u)/f32(max(samples-1u,1u));
+    let variation = random(strand/2u+u32(u.misc.w));
+    let radius = (1.65*exp(-2.4*along)+.08)*(.4+variation*.85)*scales.x;
+    let signY = select(-1.,1.,strand%2u==0u);
+    let height = signY*(.2*along+(1.3+variation*.8)*along*along)*scales.y;
+    let angle = f32(strand/2u)*TAU/32.+along*(10.+variation*5.);
     pos = vec3f(cos(angle)*radius,height,sin(angle)*radius);
   }
   var p: Particle;
@@ -111,12 +116,9 @@ fn curl(p: vec3f, t: f32) -> vec3f {
     velocity += delta*u.pointer.w*u.flow.z*18.*exp(-dot(delta,delta)/10.);
     var next = start+velocity*stepTime;
     next += normalize(start+vec3f(.001))*u.misc.z*.35;
-    let scales = collapseScales(tau);
-    let normalized = vec3f(next.x/scales.x,next.y/scales.y,next.z/scales.x);
     p.position = vec4f(next,p.position.w);
-    p.velocity = vec4f(velocity,p.velocity.w-dt);
-    // Tracers sample the shrinking region; they are not equal-mass fluid parcels.
-    if (length(normalized)>3.2 || p.velocity.w<=0.) { p=spawn(i,u32(u.timing.y*71.)+1u); }
+    // Preserve adjacency: these samples form material lines, never respawn separately.
+    p.velocity = vec4f(velocity,10.);
     particles[i]=p;
     return;
   }
@@ -353,12 +355,59 @@ export const compositeShader = common + fullscreen + /* wgsl */`
     let shadow = smoothstep(2.5,2.8,impact);
     bloomScale = .4*max(shadow,smoothstep(.01,.16,length(base)));
   }
+  if (u.flow.w > 3.5) { bloomScale=.06; }
   let hdr = (base + bloom*u.render.y*bloomScale)*u.render.z;
   let mapped = 1.-exp(-hdr);
   let vignette = 1.-smoothstep(.25,.85,length((uv-.5)*vec2f(1.,.85)))*.38;
   var bg = vec3f(.018,.030,.039) + vec3f(.006,.012,.012)*exp(-dot(uv-.5,uv-.5)*5.);
   if (u.flow.w > 2.5 && u.flow.w < 3.5) { bg = vec3f(.0015,.0013,.001); }
+  if (u.flow.w > 3.5) { bg=vec3f(.003); }
   let grain = (random(u32(o.position.x)+u32(o.position.y)*8192u)-.5)/255.;
   return vec4f((pow(mapped,vec3f(1./2.2))+bg)*vignette+grain,1.);
+}
+`;
+
+export const filamentShader = common + /* wgsl */`
+@group(0) @binding(1) var<storage,read> particles: array<Particle>;
+struct FilamentOut {
+  @builtin(position) position: vec4f,
+  @location(0) across: f32,
+  @location(1) color: vec3f,
+};
+@vertex fn vs(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32) -> FilamentOut {
+  let strand=instance%64u;
+  let segment=instance/64u;
+  let samples=(u32(u.timing.z)+63u-strand)/64u;
+  let segments=min(samples-1u,512u);
+  let corners=array<vec2f,6>(vec2f(0.,-1.),vec2f(1.,-1.),vec2f(0.,1.),vec2f(0.,1.),vec2f(1.,-1.),vec2f(1.,1.));
+  let corner=corners[v];
+  let endpoint=segment+u32(corner.x);
+  let sampleIndex=endpoint*(samples-1u)/segments;
+  let index=sampleIndex*64u+strand;
+  let pos=particles[index].position.xyz;
+  let prev=particles[max(sampleIndex,1u)*64u-64u+strand].position.xyz;
+  let next=particles[min(sampleIndex+1u,samples-1u)*64u+strand].position.xyz;
+  let tangent=normalize(next-prev+vec3f(.00001));
+  let side=normalize(cross(tangent,u.eye.xyz-pos)+vec3f(.00001));
+  let along=f32(endpoint)/f32(segments);
+  let taper=smoothstep(0.,.06,along)*(1.-smoothstep(.8,1.,along));
+  let width=(.018+.045*taper)*u.render.x*pow(u.timing.w,.25);
+  let band=clamp(1.-length(pos.xz)/collapseScales(u.timing.w).x*.75,0.,1.);
+  var color=mix(vec3f(.07,.52,.57),vec3f(.025,.10,.5),smoothstep(.05,.65,band));
+  color=mix(color,vec3f(.8,.38,.09),smoothstep(.65,.94,band));
+  if(u.render.w>.5 && u.render.w<1.5){color=mix(vec3f(.4,.1,.8),vec3f(.15,.9,.6),along);}
+  if(u.render.w>1.5 && u.render.w<2.5){color=mix(vec3f(.8,.035,.1),vec3f(1.,.65,.15),along);}
+  if(u.render.w>2.5){color=mix(vec3f(.5,.12,.02),vec3f(1.,.85,.55),along);}
+  var o:FilamentOut;
+  o.position=u.vp*vec4f(pos+side*corner.y*width,1.);
+  o.across=corner.y;
+  o.color=color;
+  return o;
+}
+@fragment fn fs(o:FilamentOut)->@location(0) vec4f {
+  // Cylindrical shading gives each narrow strip a solid, rounded profile.
+  let round=sqrt(max(0.,1.-o.across*o.across));
+  let light=.25+.65*round+.24*pow(max(0.,round*.9+o.across*.3),18.);
+  return vec4f(o.color*light,1.);
 }
 `;

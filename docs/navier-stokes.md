@@ -15,7 +15,7 @@ Den publicerade [Lean-formaliseringen](https://github.com/openai/NavierStokesAnd
 Profilen nedan är vår egen illustrativa konstruktion, inte rapportens exakta profil. AETHER använder y som vertikal axel och r = √(x²+z²).
 
 ```text
-R = 3√τ                 Z = 4τ^0,495
+R = 4√τ                 Z = 4τ^0,495
 q = r²/R²               s = y²/Z²
 E = exp(−q−s)           a = 0,7/τ
 
@@ -35,9 +35,15 @@ Nära mittplanet går material inåt. Nära axeln leds det uppåt respektive ned
 
 Renderern klipper sista tidssteget exakt vid gränsen. Compute-shadern använder explicit mittpunktsintegration (RK2) av bakgrundsfältet. Det vanliga flödets hastighetsdämpning och farttak används inte här. När tidsgränsen nås hålls partiklarna stilla; kameran kan fortfarande röra sig. Dra tillbaka tidsreglaget eller välj Återställ för att fortsätta ett nytt förlopp.
 
-Tidsreglaget initierar nya spårpartiklar vid den valda tiden. Det spolar inte tillbaka samma partikelbanor. Även partiklar som lämnat visningsregionen eller levt färdigt återföds. Därför representerar antalet synliga partiklar varken massa, densitet eller kinetisk energi. Byte av partikelantal startar om förloppet.
+Tidsreglaget initierar nya spårpartiklar vid den valda tiden. Det spolar inte tillbaka samma partikelbanor. Partiklarna är ordnade i 64 sammanhängande materialstråk, med 32 på vardera sidan om mittplanet. Sådden är formgiven efter referensfiguren och följer därefter modellens hastighetsfält; stråken är inte beräknade exakta strömlinjer till rapportens lösning. Enskilda prover återföds inte, eftersom det skulle bryta sammanhängande linjer. Antalet partiklar representerar varken massa, densitet eller kinetisk energi. Byte av antal startar om förloppet.
 
-De nio initiala spiralbanden är en visuell sådd av spårämnen. Turkos–orange visar relativ lokal vinkelhastighet, normaliserad inom den aktuella tidsbilden. Det är ingen temperaturskala. De andra paletterna fungerar också. HDR-ljuset kompenseras under kontraktionen för att bevara färg, och vanlig bloom ger glöden.
+### Stråk i stället för ett partikelmoln
+
+Alla valda partiklar advekteras på GPU:n. Renderingen samplar upp till 512 segment per stråk ur samma partikelbuffert och bygger smala kameravända band. Fler partiklar ökar tätheten av simulerade prover längs de 64 stråken; antalet synliga stråk är fast. Muskraft och turbulens deformerar själva materiallinjerna.
+
+Bandens tvärsnitt skuggas som rundade trådar. Djupbuffert gör att främre stråk skymmer bakre stråk, och 4× MSAA ger mjukare kanter. De extra färg-/djupmålen kostar cirka 48 byte per renderpixel utöver de befintliga målen. Bloom är nedtonad i detta läge så att spiralerna förblir tydliga.
+
+Standardpaletten går från turkost i ytterspiralen via blått till guld närmare axeln. Detta är en illustrativ positionsfärgning, ingen kalibrerad hastighets- eller temperaturskala. Partikelstorlek ändrar här stråkens bredd. Övriga paletter går också att använda.
 
 ## Interaktion och experiment
 

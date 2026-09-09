@@ -56,8 +56,8 @@ function updateCollapse(){
   $('collapse-phase').style.setProperty('--fill',`${state.progress*100}%`);
   $('collapse-time').value=`t = ${state.t.toFixed(3)}`;
   $('collapse-metrics').textContent=`Radie ×${state.radius.toFixed(2)} · fartskala ×${state.speed.toFixed(2)}`;
-  const colors=settings.palette===0?'Turkos → orange':settings.palette===1?'Lila → mint':settings.palette===2?'Rött → guld':'Bärnsten → vitgult';
-  $('collapse-state').textContent=state.done?'Visningsgräns nådd · dra tillbaka tiden eller återställ.':`${colors}: långsam → snabb rotation.`;
+  const colors=settings.palette===0?'Turkos → blått → guld':settings.palette===1?'Lila → mint':settings.palette===2?'Rött → guld':'Bärnsten → vitgult';
+  $('collapse-state').textContent=state.done?'Visningsgräns nådd · dra tillbaka tiden eller återställ.':`${colors}: yttre spiral → axial kärna.`;
 }
 function pause(){paused=!paused;$('pause').textContent=paused?'▷ Fortsätt':'Ⅱ Pausa';$('status').textContent=paused?'PAUSAD':'LIVE SIMULATION';}
 function reset(){renderer.reset();camera.reset(settings.preset);burst=0;}
