@@ -6,7 +6,7 @@ const canvas=$('scene'),renderer=new Renderer(canvas),camera=new Camera();
 const settings={turbulence:.75,speed:1,force:1.2,bloom:.85,size:1.2,exposure:1,preset:0,palette:0};
 const pointer={x:innerWidth/2,y:innerHeight/2,position:[0,0,0],strength:0,inside:false,button:-1,id:null};
 const keys=new Set();
-let paused=false,failed=false,burst=0,previous=performance.now(),fpsTime=0,fpsFrames=0,raf;
+let scrubbing=false,paused=false,failed=false,burst=0,previous=performance.now(),fpsTime=0,fpsFrames=0,raf;
 function fail(error){
   if(failed)return;failed=true;cancelAnimationFrame(raf);console.error(error);
   $('loading').hidden=true;$('error').hidden=false;$('error-message').textContent=error.message || String(error);$('status').textContent='GPU ERROR';
@@ -45,9 +45,12 @@ document.querySelectorAll('.preset').forEach(button=>button.addEventListener('cl
 document.querySelectorAll('.palette').forEach(button=>button.addEventListener('click',()=>{
   selectPalette(Number(button.dataset.palette));
 }));
+$('collapse-phase').addEventListener('pointerdown',()=>{scrubbing=true;});
+window.addEventListener('pointerup',()=>{scrubbing=false;});
+window.addEventListener('pointercancel',()=>{scrubbing=false;});
 $('collapse-phase').addEventListener('input',()=>{
-  renderer.time=Number($('collapse-phase').value)/100*COLLAPSE_DURATION;
-  renderer.needsReset=true;burst=0;updateCollapse();
+  renderer.seek(Number($('collapse-phase').value)/100*COLLAPSE_DURATION);
+  burst=0;updateCollapse();
 });
 function updateCollapse(){
   if(settings.preset!==4)return;
@@ -55,7 +58,7 @@ function updateCollapse(){
   $('collapse-phase').value=String(state.progress*100);
   $('collapse-phase').style.setProperty('--fill',`${state.progress*100}%`);
   $('collapse-time').value=`t = ${state.t.toFixed(3)}`;
-  $('collapse-metrics').textContent=`Radie ×${state.radius.toFixed(2)} · fartskala ×${state.speed.toFixed(2)}`;
+  $('collapse-metrics').textContent=`Radie ×${state.guideRadius.toFixed(2)} · höjd ×${state.guideHeight.toFixed(2)}`;
   const colors=settings.palette===0?'Turkos → blått → guld':settings.palette===1?'Lila → mint':settings.palette===2?'Rött → guld':'Bärnsten → vitgult';
   $('collapse-state').textContent=state.done?'Visningsgräns nådd · dra tillbaka tiden eller återställ.':`${colors}: yttre spiral → axial kärna.`;
 }
@@ -63,7 +66,7 @@ function pause(){paused=!paused;$('pause').textContent=paused?'▷ Fortsätt':'�
 function reset(){renderer.reset();camera.reset(settings.preset);burst=0;}
 function toggleUI(){const hidden=document.body.classList.toggle('ui-hidden');$('show').hidden=!hidden;}
 $('pause').addEventListener('click',pause);$('reset').addEventListener('click',reset);$('hide').addEventListener('click',toggleUI);$('show').addEventListener('click',toggleUI);
-function clearInput(){keys.clear();pointer.button=-1;pointer.strength=0;pointer.id=null;$('pointer').style.display='none';}
+function clearInput(){scrubbing=false;keys.clear();pointer.button=-1;pointer.strength=0;pointer.id=null;$('pointer').style.display='none';}
 window.addEventListener('blur',clearInput);
 document.addEventListener('visibilitychange',()=>{clearInput();previous=performance.now();fpsTime=0;fpsFrames=0;});
 window.addEventListener('keydown',e=>{
@@ -104,7 +107,7 @@ function frame(now){
   // Hover gently stirs the flow; holding left click makes the force stronger.
   pointer.strength=pointer.inside&&pointer.button!==2&&pointer.button!==1?(pointer.button===0?1:.12)*(push?-1:1):0;
   const marker=$('pointer');marker.style.display=pointer.inside&&pointer.button===0?'block':'none';marker.style.left=pointer.x+'px';marker.style.top=pointer.y+'px';marker.classList.toggle('push',push);marker.querySelector('span').textContent=push?'REPEL':'ATTRACT';
-  try{renderer.frame(paused?0:elapsed,camera,pointer,settings,paused?0:burst);burst=0;updateCollapse();}catch(e){fail(e);return;}
+  try{renderer.frame(paused||scrubbing?0:elapsed,camera,pointer,settings,paused?0:burst);burst=0;updateCollapse();}catch(e){fail(e);return;}
   fpsTime+=realElapsed;fpsFrames++;
   if(fpsTime>.6){$('fps').textContent=Math.round(fpsFrames/fpsTime);fpsFrames=0;fpsTime=0;}
   raf=requestAnimationFrame(frame);

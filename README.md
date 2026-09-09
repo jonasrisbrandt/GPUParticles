@@ -36,7 +36,7 @@ Muskraftens centrum ligger på ett plan genom kamerans fokuspunkt, vinkelrätt m
 
 ## Simuleringen
 
-**Navier–Stokes** är ett valbart flöde med en kollapsande virvelkärna, 64 sammanhängande spiralstråk i turkos, blått och guld och en tidslinje. Följ förloppet i 24 sekunder, pausa eller välj en tid direkt. Mus, kamera, bloom och upp till 4M partiklar fungerar även här. Läget är en illustrativ skalmodell med koppling till OpenAI-artikeln från september 2026; det implementerar inte den fullständiga matematiska lösningen. Visningen stannar vid modelltid 0,96 före singularitetstiden 1. Läs [modellen, reglagen och källorna](docs/navier-stokes.md).
+**Navier–Stokes** är ett valbart flöde med en kollapsande virvelkärna, partiklar som flödar längs 64 osynliga spiralguider i turkos, blått och guld och en tidslinje. Följ förloppet i 24 sekunder, pausa eller välj en tid direkt. Mus, kamera, bloom och upp till 4M partiklar fungerar även här. Guiderna pressas ihop radiellt och dras ut axiellt; tidsreglaget återger samma förlopp som uppspelningen. Läget är en formgiven guideanimation med koppling till OpenAI-artikeln från september 2026; det implementerar inte den fullständiga matematiska lösningen. Visningen stannar vid modelltid 0,96 före singularitetstiden 1. Läs [modellen, reglagen och källorna](docs/navier-stokes.md).
 
 **Black hole** är den fjärde formationen: en tunn ackretionsskiva av GPU-partiklar, ett mörkt centrum och gravitationellt böjda ljusbanor. Läget väljer automatiskt den Interstellar-inspirerade paletten **Gargantua** med bärnsten, guld och vitgul innerkant, samt en låg kameravinkel. Musen påverkar materialet i skivplanet; kamera, paus, impuls och antalsreglage fungerar som vanligt. Den tidigare paletten återställs när du lämnar läget.
 

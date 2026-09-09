@@ -24,16 +24,26 @@ test('extreme zoom and orbit inputs keep the camera finite',()=>{
 
 
 import {collapseState,COLLAPSE_DURATION} from '../src/collapse.js';
-test('collapse contracts both axes, grows speed and stops strictly before the singularity',()=>{
+test('guide timeline stops strictly before its singularity marker',()=>{
   const start=collapseState(0),end=collapseState(COLLAPSE_DURATION);
-  near(start.radius,1);near(start.height,1);near(start.speed,1);
-  assert.ok(end.radius<end.height&&end.height<1&&end.speed>5);
+  near(start.t,0);near(start.tau,1);
   near(end.tau,.04);assert.ok(end.t<1&&end.done);
   assert.deepEqual(collapseState(1e9),end);
   assert.deepEqual(collapseState(-10),start);
   for(let t=0;t<=24;t+=.1){
     const s=collapseState(t);
-    assert.ok([s.radius,s.height,s.speed,s.tau].every(Number.isFinite));
+    assert.ok([s.guideRadius,s.guideHeight,s.tau].every(Number.isFinite));
     assert.ok(s.tau>0);
+  }
+});
+
+
+test('guide animation squeezes radius and stretches height instead of uniformly zooming',()=>{
+  const start=collapseState(0),end=collapseState(24);
+  near(start.guideRadius,1);near(start.guideHeight,1);
+  assert.ok(end.guideRadius<.27&&end.guideHeight>=2.1);
+  for(let seconds=1;seconds<=24;seconds++){
+    const a=collapseState(seconds-1),b=collapseState(seconds);
+    assert.ok(b.guideRadius<a.guideRadius&&b.guideHeight>a.guideHeight);
   }
 });

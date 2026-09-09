@@ -19,21 +19,39 @@ fn hash(n: u32) -> u32 {
   return x ^ (x >> 16u);
 }
 fn random(n: u32) -> f32 { return f32(hash(n)) / 4294967295.; }
-// Divergence-free illustrative profile, NOT the paper's corrected solution.
-// Streamfunction psi = a*r^2*y*exp(-r^2/R^2-y^2/Z^2).
-fn collapseScales(tau: f32) -> vec2f {
-  return vec2f(4.*sqrt(tau),4.*pow(tau,.495));
+// Art-directed guide animation. Every particle is evaluated from absolute time,
+// so seeking and uninterrupted playback produce the same positions.
+fn guidePosition(i:u32,time:f32)->vec3f {
+  let progress=clamp(time/24.,0.,1.);
+  let tau=1.-.96*progress;
+  let strand=i%64u;
+  let seed=hash(i+u32(u.misc.w));
+  let variation=random(strand/2u+u32(u.misc.w));
+  let along=fract(random(seed)+time*.065+time*time*.003);
+  let radialScale=4.*pow(tau,.42);
+  let heightScale=2.8*(1.+1.1*progress);
+  let radius=(1.65*exp(-2.4*along)+.08)*(.4+variation*.85)*radialScale;
+  let signY=select(-1.,1.,strand%2u==0u);
+  let height=signY*(.2*along+(1.3+variation*.8)*along*along)*heightScale;
+  let angle=f32(strand/2u)*6.2831853/32.+along*(10.+variation*5.+progress*9.)+time*.12;
+  let scatter=vec3f(random(seed+1u)-.5,random(seed+2u)-.5,random(seed+3u)-.5);
+  var pos=vec3f(cos(angle)*radius,height,sin(angle)*radius)+scatter*vec3f(.24*pow(tau,.3),.18,.24*pow(tau,.3));
+  pos+=vec3f(sin(height*1.8+time+variation*9.),sin(angle*2.-time),cos(height*1.6-time+variation*9.))*u.flow.x*.07;
+  let delta=u.pointer.xyz-pos;
+  pos+=delta*u.pointer.w*u.flow.z*.65*exp(-dot(delta,delta)/12.);
+  let age=max(0.,time-u.right.w);
+  pos+=normalize(pos+vec3f(.001))*exp(-age*2.)*min(age*8.,1.)*1.5;
+  return pos;
 }
-fn collapseVelocity(pos: vec3f, tau: f32) -> vec3f {
-  let scales = collapseScales(tau);
-  let q = dot(pos.xz,pos.xz)/(scales.x*scales.x);
-  let z2 = pos.y*pos.y/(scales.y*scales.y);
-  let envelope = exp(-q-z2);
-  let strain = .7/tau;
-  let radial = -strain*envelope*(1.-2.*z2);
-  let axial = 2.*strain*pos.y*envelope*(1.-q);
-  let omega = 8.*pow(tau,-.505)/scales.x*envelope;
-  return vec3f(radial*pos.x-omega*pos.z,axial,radial*pos.z+omega*pos.x);
+fn guideParticle(i:u32)->Particle {
+  let seed=hash(i+u32(u.misc.w));
+  let phase=fract(random(seed)+u.timing.y*.065+u.timing.y*u.timing.y*.003);
+  let pos=guidePosition(i,u.timing.y);
+  var p:Particle;
+  p.position=vec4f(pos,random(seed+6u));
+  let velocity=(guidePosition(i,u.timing.y+.001)-pos)*1000.;
+  p.velocity=vec4f(velocity*min(1.,40./max(length(velocity),.001)),.05+8.*smoothstep(0.,.04,phase)*(1.-smoothstep(.94,1.,phase)));
+  return p;
 }
 `;
 
@@ -60,31 +78,19 @@ fn spawn(i: u32, epoch: u32) -> Particle {
     let diskRadius = 3.05 + pow(random(seed + 5u), 1.6)*5.15;
     pos = vec3f(cos(a)*diskRadius, (random(seed + 8u)-.5)*.04, sin(a)*diskRadius);
   }
-  if (u.flow.w > 3.5) {
-    let scales = collapseScales(u.timing.w);
-    // Ordered material filaments, paired above and below the inflow plane.
-    let strand = i % 64u;
-    let samples = (u32(u.timing.z)+63u-strand)/64u;
-    let along = f32(i/64u)/f32(max(samples-1u,1u));
-    let variation = random(strand/2u+u32(u.misc.w));
-    let radius = (1.65*exp(-2.4*along)+.08)*(.4+variation*.85)*scales.x;
-    let signY = select(-1.,1.,strand%2u==0u);
-    let height = signY*(.2*along+(1.3+variation*.8)*along*along)*scales.y;
-    let angle = f32(strand/2u)*TAU/32.+along*(10.+variation*5.);
-    pos = vec3f(cos(angle)*radius,height,sin(angle)*radius);
-  }
   var p: Particle;
   p.position = vec4f(pos, random(seed + 6u));
   p.velocity = vec4f(0.,0.,0.,random(seed + 7u)*22. + 8.);
   if (u.flow.w > 2.5 && u.flow.w < 3.5) {
     p.velocity = vec4f(normalize(vec3f(-pos.z,0.,pos.x))*sqrt(42./length(pos.xz)), 35.+random(seed+7u)*35.);
   }
-  if (u.flow.w > 3.5) { p.velocity=vec4f(collapseVelocity(pos,u.timing.w),8.+random(seed+7u)*6.); }
+
   return p;
 }
 @compute @workgroup_size(256) fn init(@builtin(global_invocation_id) id: vec3u) {
   if (id.x >= u32(u.timing.z)) { return; }
-  particles[id.x] = spawn(id.x, 0u);
+  if(u.flow.w>3.5){particles[id.x]=guideParticle(id.x);}
+  else {particles[id.x] = spawn(id.x, 0u);}
 }
 // A sum of ABC fields: each component is independent of its own axis,
 // so the analytic velocity field is divergence-free and stays filamentary.
@@ -102,24 +108,7 @@ fn curl(p: vec3f, t: f32) -> vec3f {
   if (dt <= 0.) { return; }
   var p = particles[i];
   if (u.flow.w > 3.5) {
-    // The CPU supplies the clipped physical interval, including the final partial frame.
-    let stepTime = dt*.04;
-    let tau = u.timing.w;
-    let startTau = min(1.,tau+stepTime);
-    let start = p.position.xyz;
-    let v0 = collapseVelocity(start,startTau);
-    let midpoint = start+v0*(stepTime*.5);
-    var velocity = collapseVelocity(midpoint,(startTau+tau)*.5);
-    // Artistic perturbations are separate from the analytical background profile.
-    velocity += curl(start,u.timing.y)*u.flow.x*.3;
-    let delta = u.pointer.xyz-start;
-    velocity += delta*u.pointer.w*u.flow.z*18.*exp(-dot(delta,delta)/10.);
-    var next = start+velocity*stepTime;
-    next += normalize(start+vec3f(.001))*u.misc.z*.35;
-    p.position = vec4f(next,p.position.w);
-    // Preserve adjacency: these samples form material lines, never respawn separately.
-    p.velocity = vec4f(velocity,10.);
-    particles[i]=p;
+    particles[i]=guideParticle(i);
     return;
   }
   let pos = p.position.xyz;
@@ -212,8 +201,8 @@ fn thermalColor(radius: f32) -> vec3f {
   let direction = normalize(delta+vec2f(.0001,0.));
   let normal = vec2f(-direction.y,direction.x);
   let perspective = clamp(16./max(clip.w,.1),.5,2.5);
-  let width = u.render.x*perspective;
-  let stretch = min(length(delta)*.35,5.) + width;
+  let width = u.render.x*perspective*select(1.,.85,u.flow.w>3.5);
+  let stretch = select(min(length(delta)*.35,5.) + width,width,u.flow.w>3.5);
   let offset = (direction*corner.x*stretch + normal*corner.y*width)*2./u.misc.xy;
   var o: Out;
   o.position = clip + vec4f(offset*clip.w,0.,0.);
@@ -222,9 +211,7 @@ fn thermalColor(radius: f32) -> vec3f {
   let band = sin(pos.x*.38 + pos.z*.31 + pos.y*.45 + u.timing.y*.06)*.5+.5;
   var hot = smoothstep(.48,.9,band);
   if (u.flow.w > 3.5) {
-    let scales=collapseScales(u.timing.w);
-    // Relative angular speed, not temperature or tracer density.
-    hot=smoothstep(.06,.6,exp(-dot(pos.xz,pos.xz)/(scales.x*scales.x)-pos.y*pos.y/(scales.y*scales.y)));
+    hot=clamp(1.-length(pos.xz)/(4.*pow(u.timing.w,.42))*.75,0.,1.);
   }
   var coldColor = vec3f(.055,.69,.66);
   var warmColor = vec3f(1.,.27,.065);
@@ -238,7 +225,12 @@ fn thermalColor(radius: f32) -> vec3f {
   let fade = smoothstep(0.,1.5,p.velocity.w);
   o.color = mix(coldColor,warmColor,hot)*brightness*density*depth*.012*fade;
   // Keep the contracting tracer sample from turning into a white, overexposed blob.
-  if (u.flow.w > 3.5) { o.color *= .8*pow(u.timing.w,.75); }
+  if (u.flow.w > 3.5) {
+    var color=mix(vec3f(.07,.52,.57),vec3f(.025,.10,.5),smoothstep(.05,.65,hot));
+    color=mix(color,vec3f(.8,.38,.09),smoothstep(.65,.94,hot));
+    if(u.render.w>.5){color=mix(coldColor,warmColor,hot);}
+    o.color=color*density*depth*fade*(.012+pow(p.position.w,18.)*.9);
+  }
   return o;
 }
 @fragment fn fs(o: Out) -> @location(0) vec4f {
@@ -355,7 +347,7 @@ export const compositeShader = common + fullscreen + /* wgsl */`
     let shadow = smoothstep(2.5,2.8,impact);
     bloomScale = .4*max(shadow,smoothstep(.01,.16,length(base)));
   }
-  if (u.flow.w > 3.5) { bloomScale=.06; }
+  if (u.flow.w > 3.5) { bloomScale=.22; }
   let hdr = (base + bloom*u.render.y*bloomScale)*u.render.z;
   let mapped = 1.-exp(-hdr);
   let vignette = 1.-smoothstep(.25,.85,length((uv-.5)*vec2f(1.,.85)))*.38;
@@ -364,50 +356,5 @@ export const compositeShader = common + fullscreen + /* wgsl */`
   if (u.flow.w > 3.5) { bg=vec3f(.003); }
   let grain = (random(u32(o.position.x)+u32(o.position.y)*8192u)-.5)/255.;
   return vec4f((pow(mapped,vec3f(1./2.2))+bg)*vignette+grain,1.);
-}
-`;
-
-export const filamentShader = common + /* wgsl */`
-@group(0) @binding(1) var<storage,read> particles: array<Particle>;
-struct FilamentOut {
-  @builtin(position) position: vec4f,
-  @location(0) across: f32,
-  @location(1) color: vec3f,
-};
-@vertex fn vs(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32) -> FilamentOut {
-  let strand=instance%64u;
-  let segment=instance/64u;
-  let samples=(u32(u.timing.z)+63u-strand)/64u;
-  let segments=min(samples-1u,512u);
-  let corners=array<vec2f,6>(vec2f(0.,-1.),vec2f(1.,-1.),vec2f(0.,1.),vec2f(0.,1.),vec2f(1.,-1.),vec2f(1.,1.));
-  let corner=corners[v];
-  let endpoint=segment+u32(corner.x);
-  let sampleIndex=endpoint*(samples-1u)/segments;
-  let index=sampleIndex*64u+strand;
-  let pos=particles[index].position.xyz;
-  let prev=particles[max(sampleIndex,1u)*64u-64u+strand].position.xyz;
-  let next=particles[min(sampleIndex+1u,samples-1u)*64u+strand].position.xyz;
-  let tangent=normalize(next-prev+vec3f(.00001));
-  let side=normalize(cross(tangent,u.eye.xyz-pos)+vec3f(.00001));
-  let along=f32(endpoint)/f32(segments);
-  let taper=smoothstep(0.,.06,along)*(1.-smoothstep(.8,1.,along));
-  let width=(.018+.045*taper)*u.render.x*pow(u.timing.w,.25);
-  let band=clamp(1.-length(pos.xz)/collapseScales(u.timing.w).x*.75,0.,1.);
-  var color=mix(vec3f(.07,.52,.57),vec3f(.025,.10,.5),smoothstep(.05,.65,band));
-  color=mix(color,vec3f(.8,.38,.09),smoothstep(.65,.94,band));
-  if(u.render.w>.5 && u.render.w<1.5){color=mix(vec3f(.4,.1,.8),vec3f(.15,.9,.6),along);}
-  if(u.render.w>1.5 && u.render.w<2.5){color=mix(vec3f(.8,.035,.1),vec3f(1.,.65,.15),along);}
-  if(u.render.w>2.5){color=mix(vec3f(.5,.12,.02),vec3f(1.,.85,.55),along);}
-  var o:FilamentOut;
-  o.position=u.vp*vec4f(pos+side*corner.y*width,1.);
-  o.across=corner.y;
-  o.color=color;
-  return o;
-}
-@fragment fn fs(o:FilamentOut)->@location(0) vec4f {
-  // Cylindrical shading gives each narrow strip a solid, rounded profile.
-  let round=sqrt(max(0.,1.-o.across*o.across));
-  let light=.25+.65*round+.24*pow(max(0.,round*.9+o.across*.3),18.);
-  return vec4f(o.color*light,1.);
 }
 `;

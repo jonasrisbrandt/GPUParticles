@@ -35,18 +35,23 @@ document.getElementById('run').onclick=async()=>{
       output.textContent+=`PASS formation ${preset}: initialization, update, rendering and finite GPU state\n`;
     }
     settings.preset=4;settings.palette=0;camera.reset(4);camera.update(16/9);
-    renderer.time=0;renderer.needsReset=true;renderer.frame(0,camera,pointer,settings,0);
-    const broad=await sample();
-    renderer.time=24;renderer.needsReset=true;renderer.frame(0,camera,pointer,settings,0);
-    const narrow=await sample();
-    for(let i=0;i<broad.length;i+=8){
-      const radius=Math.hypot(broad[i],broad[i+2]);
-      assert(Math.abs(Math.hypot(narrow[i],narrow[i+2])/radius-.2)<1e-4,'GPU radial scale mismatch');
-      assert(Math.abs(narrow[i+1]-broad[i+1]*Math.pow(.04,.495))<1e-4,'GPU axial scale mismatch');
-      const speedRatio=Math.hypot(narrow[i+4],narrow[i+5],narrow[i+6])/Math.hypot(broad[i+4],broad[i+5],broad[i+6]);
-      assert(speedRatio>4.99&&speedRatio<5.09,'GPU velocity did not grow with contraction');
-    }
-    output.textContent+='PASS GPU radial/axial scaling and increasing velocity at matching tracer coordinates\n';
+    renderer.reset();renderer.frame(0,camera,pointer,settings,0);
+    for(let frame=0;frame<240;frame++)renderer.frame(.05,camera,pointer,settings,0);
+    const played=await sample();
+    renderer.seek(3);renderer.frame(0,camera,pointer,settings,0);
+    renderer.seek(12);renderer.frame(.05,camera,pointer,settings,0);
+    const scrubbed=await sample();
+    assert(played.every((v,i)=>v===scrubbed[i]),'Scrubbing differs from uninterrupted playback');
+    assert(renderer.time===12,'Seek advanced instead of displaying the requested time');
+    renderer.seek(4);renderer.frame(0,camera,pointer,settings,0);
+    const back=await sample();
+    renderer.seek(12);renderer.frame(0,camera,pointer,settings,0);
+    const again=await sample();assert(again.every((v,i)=>v===played[i]),'Forward/backward seek is not deterministic');
+    assert(back.some((v,i)=>v!==again[i]),'Timeline did not animate particles');
+    pointer.strength=1;renderer.seek(12);renderer.frame(0,camera,pointer,settings,0);
+    const disturbed=await sample();assert(disturbed.some((v,i)=>v!==played[i]),'Mouse did not deform the guided particles');
+    pointer.strength=0;
+    output.textContent+='PASS exact playback/seek equivalence, backward scrubbing, mouse deformation and stable requested time\n';
     for(const time of [0,12,23.99,24]){
       renderer.time=time;renderer.needsReset=true;
       renderer.frame(1/60,camera,pointer,settings,0);await sample();

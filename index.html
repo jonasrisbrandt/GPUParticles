@@ -14,9 +14,9 @@
         <div class="section-label">NS <span>KOLLAPS / SKALMODELL</span></div>
         <label for="collapse-phase">Mot singulariteten <output id="collapse-time">t = 0.000</output></label>
         <input id="collapse-phase" type="range" min="0" max="100" step="0.1" value="0">
-        <p id="collapse-metrics" class="collapse-metrics">Radie ×1.00 · fartskala ×1.00</p>
+        <p id="collapse-metrics" class="collapse-metrics">Radie ×1.00 · höjd ×1.00</p>
         <p id="collapse-state" class="collapse-copy">Turkos → blått → guld: yttre spiral → axial kärna.</p>
-        <p class="collapse-copy">Skalmodell av virvelkärnan, inte den fullständiga lösningen. Stannar före t = 1. Mus och turbulens är fria tillägg.</p>
+        <p class="collapse-copy">Partiklar längs osynliga spiralguider. Formgiven kollaps med förstärkt axial sträckning. Dra tidsreglaget för att spela framåt eller bakåt.</p>
         <a class="collapse-link" href="https://github.com/jonasrisbrandt/GPUParticles/blob/main/docs/navier-stokes.md" target="_blank" rel="noopener">Modellen & källorna ↗</a>
       </section>
       <section><div class="section-label">02 <span>SIMULERING</span></div><label for="count">Partiklar <output id="count-value">524 288</output></label><select id="count"><option value="65536">65 536 · lätt</option><option value="262144">262 144</option><option value="524288" selected>524 288</option><option value="1048576">1 048 576 · 1M</option><option value="2097152">2 097 152 · 2M</option><option value="4194304">4 194 304 · 4M</option></select><div class="scale-note"><span>GPU COMPUTE</span><span id="memory">16 MB</span></div>

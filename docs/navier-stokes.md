@@ -10,49 +10,43 @@ Vi använder rapportens skalexponenter: med τ = 1 − t är radialskalan propor
 
 Den publicerade [Lean-formaliseringen](https://github.com/openai/NavierStokesAndEuler) är en separat resurs. AETHER kör ingen Lean-kod.
 
-## Vår förenklade profil
+## Partiklar som följer osynliga guider
 
-Profilen nedan är vår egen illustrativa konstruktion, inte rapportens exakta profil. AETHER använder y som vertikal axel och r = √(x²+z²).
+Den aktuella versionen är en formgiven guideanimation inspirerad av figuren. Den tidigare analytiska bakgrundsadvektionen och de synliga banden är ersatta. 64 osynliga spiralguider bestämmer formen; vanliga, separata GPU-partiklar flödar längs dem från ytterområdet mot axeln och vidare uppåt eller nedåt. Inga rör, band eller sammanhängande linjer ritas.
+
+Varje partikel har ett stabilt slumpfrö och en egen startfas. Under 24 sekunder vid hastighet 1 färdas den längs sin guide enligt:
 
 ```text
-R = 4√τ                 Z = 4τ^0,495
-q = r²/R²               s = y²/Z²
-E = exp(−q−s)           a = 0,7/τ
-
-ψ = a r² y E
-u_r = −(1/r) ∂ψ/∂y = −a r E(1−2s)
-u_y =  (1/r) ∂ψ/∂r =  2a y E(1−q)
-u_θ = 8τ^−0,505 (r/R) E
+p = clamp(sekunder / 24, 0, 1)
+τ = 1 − 0,96p
+fas = fract(startfas + 0,065 sekunder + 0,003 sekunder²)
+radial formfaktor = τ^0,42
+axial formfaktor = 1 + 1,1p
 ```
 
-Strömfunktionen ψ gör det radiella/axiella bakgrundsfältet divergensfritt analytiskt. Den axialsymmetriska rotationen tillför ingen divergens. I shadern räknas allt i kartesiska koordinater utan division med r, vilket undviker en numerisk specialpunkt på axeln.
+Vid slutet är radialskalan cirka 26 procent och höjdskalan 210 procent av startvärdet. Guiderna får också fler spiralvarv. Axial sträckning är avsiktligt förstärkt för att göra förloppet tydligt: detta är inte rapportens fysiska längdskalor. Kameran flyttas inte under förloppet. Den inledande kameravyn lämnar utrymme för utdragningen.
 
-Nära mittplanet går material inåt. Nära axeln leds det uppåt respektive nedåt; längre ut vänder cirkulationen. Vid fasta normaliserade koordinater får profilen de angivna skalexponenterna. Detta räcker inte för att återge rapportens lösning: vi löser varken tryck, viskositet, kraftresidual eller dess korrigeringar. Modellen startar med ett redan rörligt fält.
+Partiklarna har liten individuell spridning runt guiderna och varierad ljusstyrka så att de förblir synliga som punkter. När en partikel når änden tonas den ut och återkommer vid inflödet. Positionen beräknas på GPU:n; alla valda partiklar visas, upp till 4 194 304. Bufferten är fortfarande 32 byte per partikel. De extra band-/djupmålen och MSAA från rörversionen behövs inte längre.
 
-## GPU och tid
+## Tidsreglaget spelar samma animation
 
-`src/collapse.js` definierar ett 24 sekunder långt visningsförlopp vid hastighet 1. Fysikalisk modelltid går från 0 till 0,96. Vid slutet är τ = 0,04, radien 0,20 gånger startskalan och fartskalan ungefär 5,08 gånger större. Vi utvärderar aldrig t = 1.
+Partikelposition, guidernas deformation, rotation, turbulens och flödesfas beräknas från absolut animationstid. Uppspelning till 12 sekunder ger därför samma partikelbild som att dra reglaget till 12 sekunder, med samma frö och interaktionsinställningar.
 
-Renderern klipper sista tidssteget exakt vid gränsen. Compute-shadern använder explicit mittpunktsintegration (RK2) av bakgrundsfältet. Det vanliga flödets hastighetsdämpning och farttak används inte här. När tidsgränsen nås hålls partiklarna stilla; kameran kan fortfarande röra sig. Dra tillbaka tidsreglaget eller välj Återställ för att fortsätta ett nytt förlopp.
+Vid dragning håller uppspelningen stilla medan reglaget bestämmer tiden. När handtaget släpps fortsätter animationen om den inte var pausad. I pausat läge går det att stega både framåt och bakåt. Den första bildrutan efter en tidsändring visar exakt den valda tiden. Kameran påverkas inte och partiklarna byts inte ut mot en skalad startfigur.
 
-Tidsreglaget initierar nya spårpartiklar vid den valda tiden. Det spolar inte tillbaka samma partikelbanor. Partiklarna är ordnade i 64 sammanhängande materialstråk, med 32 på vardera sidan om mittplanet. Sådden är formgiven efter referensfiguren och följer därefter modellens hastighetsfält; stråken är inte beräknade exakta strömlinjer till rapportens lösning. Enskilda prover återföds inte, eftersom det skulle bryta sammanhängande linjer. Antalet partiklar representerar varken massa, densitet eller kinetisk energi. Byte av antal startar om förloppet.
+Musen deformerar partikelpositionerna runt den aktuella pekaren. Tidigare musrörelser spelas inte in; vid tidsdragning används den aktuella muspåverkan. B ger en avklingande radiell impuls. Den senaste impulsens tid sparas tills Återställ, så att tidsreglaget också kan visa den pulsen igen.
 
-### Stråk i stället för ett partikelmoln
+## Kontroller och färg
 
-Alla valda partiklar advekteras på GPU:n. Renderingen samplar upp till 512 segment per stråk ur samma partikelbuffert och bygger smala kameravända band. Fler partiklar ökar tätheten av simulerade prover längs de 64 stråken; antalet synliga stråk är fast. Muskraft och turbulens deformerar själva materiallinjerna.
-
-Bandens tvärsnitt skuggas som rundade trådar. Djupbuffert gör att främre stråk skymmer bakre stråk, och 4× MSAA ger mjukare kanter. De extra färg-/djupmålen kostar cirka 48 byte per renderpixel utöver de befintliga målen. Bloom är nedtonad i detta läge så att spiralerna förblir tydliga.
-
-Standardpaletten går från turkost i ytterspiralen via blått till guld närmare axeln. Detta är en illustrativ positionsfärgning, ingen kalibrerad hastighets- eller temperaturskala. Partikelstorlek ändrar här stråkens bredd. Övriga paletter går också att använda.
-
-## Interaktion och experiment
-
-- Börja med standardpaletten Ion, 524 288 partiklar och hastighet 1.
-- Sätt Turbulens och Muskraft till 0 för att studera enbart bakgrundsprofilen. B-impulsen är också ett fritt visuellt tillägg.
-- Pausa, flytta tidsreglaget och rotera kameran för att jämföra kärnans form.
-- Återställ och prova vänster musknapp eller Shift för att störa spårpartiklarna.
-- Prova 4M om GPU:n stöder det. Inga extra partikelbuffertar behövs för detta läge.
+- Vänster musknapp drar, Shift stöter bort. Muskraft styr styrkan.
+- Turbulens ger små böljande avvikelser kring guiderna.
+- Partikelstorlek ändrar punkternas storlek; Bloom och Exponering styr ljuset.
+- Standardfärgen går från turkos via blått till guld närmare axeln. Den är illustrativ, inte en kalibrerad hastighets- eller temperaturskala.
+- Återställ börjar om tiden och väljer ett nytt partikelmönster. Byte av antal börjar också om.
+- Vid slutpunkten stannar visningen. Dra tiden tillbaka eller återställ för att fortsätta.
 
 ## Verifiering
 
-`npm test` kontrollerar skalornas riktning och den ändliga tidsgränsen. `tests/gpu-smoke.html` kompilerar riktiga shaders, läser partikeldata nära bufferns början och slut, provar tidpunkterna 0, 12, 23,99 och 24 sekunder och kontrollerar att slutpunkten fryser tillståndet. Testet provar även paus, återstart, interaktion, största tillåtna partikelbuffert och växling till och från Black hole. Testerna verifierar implementationens stabilitet, inte ett matematiskt singularitetsbevis.
+`npm test` kontrollerar tidsgränsen samt att guiderna blir smalare och högre. `tests/gpu-smoke.html` jämför faktisk GPU-partikeldata efter 240 uppspelningssteg med direkt tidssökning till samma tid; båda tillstånden måste vara identiska. Testet provar också bakåt/framåt, musdeformation, paus, slutpunkt, återstart, upp till 4M partiklar och växling mellan alla formationer.
+
+Detta verifierar animationen och renderingen, inte ett singularitetsbevis eller en Navier–Stokes-solver.

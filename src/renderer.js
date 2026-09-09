@@ -1,5 +1,5 @@
 import {collapseState,COLLAPSE_DURATION} from './collapse.js';
-import {simulation,particleShader,downsampleShader,compositeShader,blurShader,blackHoleShader,filamentShader} from './shaders.js';
+import {simulation,particleShader,downsampleShader,compositeShader,blurShader,blackHoleShader} from './shaders.js';
 
 export class Renderer {
   constructor(canvas){this.canvas=canvas;this.uniforms=new Float32Array(48);this.time=0;this.needsReset=true;this.seed=42;this.frames=0;this.errors=[];}
@@ -17,7 +17,7 @@ export class Renderer {
     this.context.configure({device,format:this.format,alphaMode:'opaque'});
     this.uniformBuffer=device.createBuffer({label:'Frame uniforms',size:192,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
     const modules=[];
-    for(const [label,code] of [['Simulation',simulation],['Particles',particleShader],['Bloom',downsampleShader],['Composite',compositeShader],['Bloom smoothing',blurShader],['Black hole lensing',blackHoleShader],['Material filaments',filamentShader]]) {
+    for(const [label,code] of [['Simulation',simulation],['Particles',particleShader],['Bloom',downsampleShader],['Composite',compositeShader],['Bloom smoothing',blurShader],['Black hole lensing',blackHoleShader]]) {
       const module=device.createShaderModule({label,code});
       const info=await module.getCompilationInfo();
       const errors=info.messages.filter(m=>m.type==='error');
@@ -30,7 +30,6 @@ export class Renderer {
     this.particlePipeline=await device.createRenderPipelineAsync({label:'HDR particle streaks',layout:'auto',vertex:{module:modules[1],entryPoint:'vs'},fragment:{module:modules[1],entryPoint:'fs',targets:[{format:'rgba16float',blend:{color:{srcFactor:'one',dstFactor:'one',operation:'add'},alpha:{srcFactor:'zero',dstFactor:'one',operation:'add'}}}]},primitive:{topology:'triangle-list'}});
     this.diskPipeline=await device.createRenderPipelineAsync({label:'Particle accretion emission',layout:'auto',vertex:{module:modules[1],entryPoint:'vsDisk'},fragment:{module:modules[1],entryPoint:'fs',targets:[{format:'rgba16float',blend:{color:{srcFactor:'one',dstFactor:'one',operation:'add'},alpha:{srcFactor:'zero',dstFactor:'one',operation:'add'}}}]}});
     this.blackHolePipeline=await device.createRenderPipelineAsync({label:'Curved rays through particle disk',layout:'auto',vertex:{module:modules[5],entryPoint:'vs'},fragment:{module:modules[5],entryPoint:'fs',targets:[{format:'rgba16float'}]}});
-    this.filamentPipeline=await device.createRenderPipelineAsync({label:'Solid material filaments',multisample:{count:4},layout:'auto',vertex:{module:modules[6],entryPoint:'vs'},fragment:{module:modules[6],entryPoint:'fs',targets:[{format:'rgba16float'}]},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less'}});
     this.bloomPipeline=await device.createRenderPipelineAsync({label:'Bloom pyramid',layout:'auto',vertex:{module:modules[2],entryPoint:'vs'},fragment:{module:modules[2],entryPoint:'fs',targets:[{format:'rgba16float'}]}});
     this.compositePipeline=await device.createRenderPipelineAsync({label:'Bloom and tone map',layout:'auto',vertex:{module:modules[3],entryPoint:'vs'},fragment:{module:modules[3],entryPoint:'fs',targets:[{format:this.format}]}});
     this.blurPipelines=[];
@@ -52,11 +51,10 @@ export class Renderer {
     this.initGroup=this.device.createBindGroup({layout:this.initPipeline.getBindGroupLayout(0),entries});
     this.computeGroup=this.device.createBindGroup({layout:this.computePipeline.getBindGroupLayout(0),entries});
     this.particleGroup=this.device.createBindGroup({layout:this.particlePipeline.getBindGroupLayout(0),entries});
-    this.filamentGroup=this.device.createBindGroup({layout:this.filamentPipeline.getBindGroupLayout(0),entries});
     this.diskGroup=this.device.createBindGroup({layout:this.diskPipeline.getBindGroupLayout(0),entries});
     this.needsReset=true;
   }
-  reset(){this.needsReset=true;this.seed=(this.seed+7919)%1000000;this.time=0;}
+  reset(){this.guideBurstTime=-100;this.needsReset=true;this.seed=(this.seed+7919)%1000000;this.time=0;}
   resize(){
     const max=this.device.limits.maxTextureDimension2D;
     const cssW=Math.max(1,this.canvas.clientWidth),cssH=Math.max(1,this.canvas.clientHeight);
@@ -65,12 +63,6 @@ export class Renderer {
     if(this.width===width&&this.height===height) return;
     this.width=this.canvas.width=width;this.height=this.canvas.height=height;
     this.targets?.forEach(t=>t.destroy());this.blurTargets?.forEach(t=>t.destroy());
-    this.filamentTarget?.destroy();
-    this.filamentTarget=this.device.createTexture({label:'Antialiased filaments',size:[width,height],sampleCount:4,format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT});
-    this.filamentView=this.filamentTarget.createView();
-    this.depthTexture?.destroy();
-    this.depthTexture=this.device.createTexture({label:'Filament occlusion',size:[width,height],sampleCount:4,format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});
-    this.depthView=this.depthTexture.createView();
     this.targets=[];this.bloomGroups=[];
     for(let i=0;i<6;i++) this.targets.push(this.device.createTexture({label:i?'Bloom '+i:'HDR scene',size:[Math.max(1,width>>i),Math.max(1,height>>i)],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING}));
     this.views=this.targets.map(t=>t.createView());
@@ -83,15 +75,18 @@ export class Renderer {
     for(let i=1;i<6;i++) this.bloomGroups.push(this.device.createBindGroup({layout:this.bloomPipeline.getBindGroupLayout(0),entries:[{binding:0,resource:this.views[i-1]},{binding:1,resource:this.sampler}]}));
     this.compositeGroup=this.device.createBindGroup({layout:this.compositePipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniformBuffer}},...this.views.map((resource,i)=>({binding:i+1,resource})),{binding:7,resource:this.sampler}]});
   }
+  seek(seconds){this.time=Math.max(0,Math.min(COLLAPSE_DURATION,seconds));this.needsReset=true;this.seekPending=true;}
   frame(dt,camera,pointer,settings,burst){
+    if(this.seekPending){dt=0;this.seekPending=false;}
     this.resize();
     if(settings.preset===4){
       const previousTime=this.time;
       this.time=Math.min(COLLAPSE_DURATION,this.time+dt*settings.speed);
       dt=(this.time-previousTime)/settings.speed;
     }else this.time+=dt*settings.speed;
+    if(settings.preset===4&&burst)this.guideBurstTime=this.time;
     const u=this.uniforms;
-    u.set(camera.vp,0);u.set([...camera.right,0],16);u.set([...camera.up,0],20);u.set([...camera.eye,0],24);
+    u.set(camera.vp,0);u.set([...camera.right,this.guideBurstTime??-100],16);u.set([...camera.up,0],20);u.set([...camera.eye,0],24);
     u.set([...pointer.position,pointer.strength],28);u.set([dt,this.time,this.count,collapseState(this.time).tau],32);
     u.set([settings.turbulence,settings.speed,settings.force,settings.preset],36);
     u.set([settings.size,settings.bloom,settings.exposure,settings.palette],40);u.set([this.width,this.height,burst,this.seed],44);
@@ -105,9 +100,8 @@ export class Renderer {
       const disk=encoder.beginRenderPass({colorAttachments:[attachment(this.diskView)]});
       disk.setPipeline(this.diskPipeline);disk.setBindGroup(0,this.diskGroup);disk.draw(6,this.count);disk.end();
     }
-    const scene=encoder.beginRenderPass({colorAttachments:[settings.preset===4?{...attachment(this.filamentView),resolveTarget:this.views[0]}:attachment(this.views[0])],...(settings.preset===4?{depthStencilAttachment:{view:this.depthView,depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'store'}}:{})});
+    const scene=encoder.beginRenderPass({colorAttachments:[attachment(this.views[0])]});
     if(settings.preset===3){scene.setPipeline(this.blackHolePipeline);scene.setBindGroup(0,this.blackHoleGroup);scene.draw(3);}
-    else if(settings.preset===4){scene.setPipeline(this.filamentPipeline);scene.setBindGroup(0,this.filamentGroup);scene.draw(6,64*Math.min(Math.floor(this.count/64)-1,512));}
     else {scene.setPipeline(this.particlePipeline);scene.setBindGroup(0,this.particleGroup);scene.draw(6,this.count);}
     scene.end();
     for(let i=0;i<5;i++){

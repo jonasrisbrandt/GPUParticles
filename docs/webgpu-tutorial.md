@@ -699,4 +699,4 @@ Som sista övning: följ ett vänsterdrag från muskoordinaterna, genom fokuspla
 
 ## Nytt experiment: Navier–Stokes
 
-AETHER har också ett femte flöde med ett eget analytiskt bakgrundsfält och RK2-advektion på GPU:n. En separat tidslinje följer en kontraherande virvelkärna och stannar vid en ändlig visningsgräns. Det är en illustrativ skalmodell, inte en full Navier–Stokes-solver. [Fortsätt till modellen, shaderformlerna, begränsningarna och källorna](navier-stokes.md).
+AETHER har också ett femte flöde med partiklar längs osynliga spiralguider på GPU:n. En separat tidslinje följer en kontraherande virvelkärna och stannar vid en ändlig visningsgräns. Den formgivna animationen kan spelas både framåt och bakåt med tidsreglaget. Den är inte en full Navier–Stokes-solver. [Fortsätt till modellen, shaderformlerna, begränsningarna och källorna](navier-stokes.md).
